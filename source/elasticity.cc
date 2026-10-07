@@ -2592,6 +2592,15 @@ namespace ImmersX
 
     if (false)
       output_lambda();
+
+
+    if (par.output_pressure)
+      {
+        pressure_at_immersed_surface              = 0.0;
+        pressure_at_immersed_surface_by_inclusion = 0.0;
+        compute_pressure_at_immersed_surface();
+        output_pressure_at_immersed_surface(true);
+      }
   }
 
   template <int dim, int spacedim>
