@@ -781,8 +781,10 @@ namespace ImmersX
     void
     update_inclusions_data(std::vector<double> new_data)
     {
-      if constexpr (spacedim == 2)
-        return;
+      AssertThrow(
+        spacedim == 2,
+        ExcMessage(
+          "update of inclusions data is only available for spacedim = 3"));
 
       // if (new_data.size() != 0 && inclusions.size() == 0)
 
@@ -818,8 +820,10 @@ namespace ImmersX
     void
     update_inclusions_data(std::vector<std::vector<double>> new_data)
     {
-      if constexpr (spacedim == 2)
-        return;
+      AssertThrow(
+        spacedim == 2,
+        ExcMessage(
+          "update of inclusions data is only available for spacedim = 3"));
 
       AssertThrow(
         new_data.size() == n_vessels,
@@ -852,8 +856,6 @@ namespace ImmersX
             }
           else
             {
-              // compute nv
-              // std::vector<double>
               double current_vessel_new_data;
               update_single_inclusion_data_along_normal(0, current_new_data[0]);
               // current_vessel_new_data.push_back(current_new_data[0]);
@@ -914,6 +916,11 @@ namespace ImmersX
       const types::global_dof_index &inclusion_id,
       const double                   nd)
     {
+      AssertThrow(
+        spacedim == 2,
+        ExcMessage(
+          "update of inclusions data is only available for spacedim = 3"));
+
       AssertIndexRange(inclusion_id, inclusions_data.size());
       // AssertIndexRange(inclusion_id, inclusions.size());
       // // update old radius with new value
@@ -929,7 +936,7 @@ namespace ImmersX
       //     inclusions[inclusion_id][2 * spacedim] +=
       //     inclusions_data[inclusion_id][0];
       //   }
-      inclusions_data[inclusion_id] = {nd, 0, 0, 0, nd, 0, 0, 0, 0};
+      inclusions_data[inclusion_id] = {0, 0, 0, nd, 0, 0, 0, nd, 0, 0, 0, 0};
     }
 
     /**
@@ -941,7 +948,7 @@ namespace ImmersX
     {}
 
     /**
-     * Return number of vessel groups currently detected.
+     * Return number of vessel currently detected.
      */
     unsigned int
     get_n_vessels() const
@@ -1111,6 +1118,45 @@ namespace ImmersX
       return segment_indices[get_inclusion_id(quadrature_id)];
       // return
       // segment_indices.nth_index_in_set(get_inclusion_id(quadrature_id));
+    }
+
+    std::vector<unsigned int>
+    get_inclusions_in_a_segment(unsigned int segment_index) const
+    {
+      std::vector<unsigned int> inclusions_in_segment;
+      for (unsigned int i = 0; i < segment_indices.size(); ++i)
+        if (segment_indices[i] == segment_index)
+          inclusions_in_segment.push_back(i);
+      return inclusions_in_segment;
+    }
+
+
+    double
+    get_average_vessel_radius(unsigned int vessel_id)
+    {
+      AssertIndexRange(vessel_id, n_vessels);
+      auto   inc_vec = map_vessel_inclusions.at(vessel_id);
+      double radius  = 0;
+      for (const auto i : inc_vec)
+        {
+          radius += get_radius(i);
+        }
+      Assert(inc_vec.size() > 0, ExcInternalError());
+      radius /= inc_vec.size();
+      Assert(radius > 0, ExcInternalError());
+      return radius;
+    }
+
+    double
+    get_vessel_length(unsigned int vessel_id)
+    {
+      AssertIndexRange(vessel_id, n_vessels);
+      auto   inc_vec = map_vessel_inclusions.at(vessel_id);
+      double length  = 0;
+      for (const auto i : inc_vec)
+        length += get_direction(i).norm();
+      Assert(length > 0, ExcInternalError());
+      return length;
     }
 
     ParameterAcceptorProxy<Functions::ParsedFunction<spacedim>> inclusions_rhs;
