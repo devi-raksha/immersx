@@ -1,7 +1,3 @@
-/* ---------------------------------------------------------------------
- */
-#ifdef ENABLE_COUPLED_PROBLEMS
-
 #  ifndef dealii_distributed_lagrange_multiplier_coupled_elasticity_h
 #    define dealii_distributed_lagrange_multiplier_coupled_elasticity_h
 
@@ -25,7 +21,7 @@ namespace ImmersX
     void
     run_timestep();
     void
-    compute_coupling_pressure();
+    compute_pressure_at_immersed_surface();
 
     void
     update_inclusions_data(std::vector<double> new_data);
@@ -42,8 +38,10 @@ namespace ImmersX
       return this->inclusions.get_n_vessels();
     };
 
-    TrilinosWrappers::MPI::Vector coupling_pressure;
-    TrilinosWrappers::MPI::Vector coupling_pressure_at_inclusions;
+    TrilinosWrappers::MPI::Vector pressure_at_immersed_surface; ///<
+    TrilinosWrappers::MPI::Vector
+      pressure_at_immersed_surface_by_inclusion; ///<
+    /// @}
 
   private:
     void
@@ -53,11 +51,10 @@ namespace ImmersX
     refine_and_transfer_around_inclusions();
 
     void
-    output_coupling_pressure(bool openfilefirsttime) const;
+    output_pressure_at_immersed_surface(bool) const;
   };
 
 #  endif
 
 } // namespace ImmersX
 
-#endif

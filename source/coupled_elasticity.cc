@@ -16,7 +16,6 @@
  * Author: Wolfgang Bangerth, University of Heidelberg, 2000
  * Modified by: Luca Heltai, 2020
  */
-#ifdef ENABLE_COUPLED_PROBLEMS
 
 #  include <immersx/physics/coupled_elasticity.h>
 
@@ -140,7 +139,7 @@ namespace ImmersX
 
   template <int dim, int spacedim>
   void
-  CoupledElasticityProblem<dim, spacedim>::compute_coupling_pressure()
+  CoupledElasticityProblem<dim, spacedim>::compute_pressure_at_immersed_surface()
   {
     TimerOutput::Scope t(this->computing_timer,
                          "Postprocessing: Computing Pressure");
@@ -159,12 +158,12 @@ namespace ImmersX
           Utilities::MPI::create_evenly_distributed_partitioning(
             this->mpi_communicator, this->inclusions.n_inclusions());
 
-        coupling_pressure.reinit(locally_owned_vessels, this->mpi_communicator);
-        auto &pressure = coupling_pressure;
+        pressure_at_immersed_surface.reinit(locally_owned_vessels, this->mpi_communicator);
+        auto &pressure = pressure_at_immersed_surface;
         pressure       = 0;
-        coupling_pressure_at_inclusions.reinit(locally_owned_inclusions,
+        pressure_at_immersed_surface_by_inclusion.reinit(locally_owned_inclusions,
                                                this->mpi_communicator);
-        auto &pressure_at_inc = coupling_pressure_at_inclusions;
+        auto &pressure_at_inc = pressure_at_immersed_surface_by_inclusion;
         pressure_at_inc       = 0;
 
         auto &lambda_to_pressure = this->locally_relevant_solution.block(1);
@@ -213,7 +212,7 @@ namespace ImmersX
   template <int dim, int spacedim>
   // TrilinosWrappers::MPI::Vector
   void
-  CoupledElasticityProblem<dim, spacedim>::output_coupling_pressure(
+  CoupledElasticityProblem<dim, spacedim>::output_pressure_at_immersed_surface(
     bool openfilefirsttime) const
   {
     TimerOutput::Scope t(this->computing_timer,
@@ -232,7 +231,7 @@ namespace ImmersX
           << std::endl;
       }
 
-    const auto &pressure = coupling_pressure;
+    const auto &pressure = pressure_at_immersed_surface;
 
     // print .txt only sequential
     if (Utilities::MPI::n_mpi_processes(this->mpi_communicator) == 1)
@@ -323,7 +322,7 @@ namespace ImmersX
     this->setup_fe();
     {
       TimerOutput::Scope t(this->computing_timer, "Setup inclusion");
-      this->inclusions.setup_inclusions_particles(this->tria);
+      this->inclusions.setup_inclusions_particles(*this->tria);
     }
     this->cycle = 0;
     this->setup_dofs();
@@ -370,12 +369,12 @@ namespace ImmersX
     // if (this->par.output_results)
     this->output_results();
 
-    coupling_pressure.clear();
-    coupling_pressure_at_inclusions.clear();
+    pressure_at_immersed_surface.clear();
+    pressure_at_immersed_surface_by_inclusion.clear();
     // coupling_pressure =
     // output_pressure(cycle == 0 ? true : false);
-    compute_coupling_pressure();
-    output_coupling_pressure(this->cycle == 0 ? true : false);
+    compute_pressure_at_immersed_surface();
+    output_pressure_at_immersed_surface(this->cycle == 0 ? true : false);
 
     this->compute_internal_and_boundary_stress(this->cycle == 0 ? true : false);
     this->cycle++;
@@ -438,7 +437,7 @@ namespace ImmersX
         // const std::vector<double> pressure_of_inc_in_vessel(pressure);//
         // (*pressure[starting_inclusion], *pressure[starting_inclusion+N1]);
         const Vector<double> pressure_of_inc_in_vessel(
-          coupling_pressure_at_inclusions);
+          pressure_at_immersed_surface_by_inclusion);
 
         new_vector.push_back(pressure_of_inc_in_vessel[starting_inclusion]);
 
@@ -468,7 +467,7 @@ namespace ImmersX
                            spacedim>::refine_and_transfer_around_inclusions()
   {
     TimerOutput::Scope t(this->computing_timer, "Refine");
-    Vector<float>      error_per_cell(this->tria.n_active_cells());
+    Vector<float>      error_per_cell(this->tria->n_active_cells());
     KellyErrorEstimator<spacedim>::estimate(
       this->dh,
       QGauss<spacedim - 1>(this->par.fe_degree + 1),
@@ -526,7 +525,7 @@ namespace ImmersX
          ref_cycle < this->par.n_refinement_cycles - 1;
          ++ref_cycle)
       {
-        for (const auto &cell : this->tria.active_cell_iterators())
+        for (const auto &cell : this->tria->active_cell_iterators())
           {
             if (cell->material_id() == material_id)
               cell->set_refine_flag();
@@ -541,5 +540,3 @@ namespace ImmersX
   template class CoupledElasticityProblem<3>;
 
 } // namespace ImmersX
-
-#endif
