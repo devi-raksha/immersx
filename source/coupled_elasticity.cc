@@ -320,6 +320,7 @@ namespace ImmersX
     this->print_parameters();
     this->make_grid();
     this->setup_fe();
+    if (!uses_tensor_product_coupling())
     {
       TimerOutput::Scope t(this->computing_timer, "Setup inclusion");
       this->inclusions.setup_inclusions_particles(*this->tria);
@@ -382,18 +383,29 @@ namespace ImmersX
 
   template <int dim, int spacedim>
   void
-  CoupledElasticityProblem<dim, spacedim>::update_inclusions_data(
+  CoupledElasticityProblem<dim, spacedim>::update_vessel_radius_data(
     std::vector<double> new_data)
   {
-    this->inclusions.update_inclusions_data(new_data);
+    if (!this->uses_tensor_product_coupling())
+      this->inclusions.update_inclusions_data(new_data);
+    else
+    {
+#ifdef DEAL_II_WITH_VTK
+AssertThrow(true, ExcMessage("TODO"));
+
+#endif
+AssertThrow(true, ExcMessage("Trying to update vessel radius data: the code uses tensor_coupling but VTK flag is OFF"));
   }
+}
 
   template <int dim, int spacedim>
   void
-  CoupledElasticityProblem<dim, spacedim>::update_inclusions_data(
+  CoupledElasticityProblem<dim, spacedim>::update_vessel_radius_data(
     std::vector<double> new_data,
     std::vector<int>    cells_per_vessel)
   {
+    if (!this->uses_tensor_product_coupling())
+    {
     Assert(cells_per_vessel.size() == this->inclusions.get_n_vessels(),
            ExcInternalError());
     std::vector<std::vector<double>> full_vector;
@@ -411,6 +423,15 @@ namespace ImmersX
         full_vector.push_back(vessel_vector);
       }
     this->inclusions.update_inclusions_data(full_vector);
+    }
+    else
+    {
+#ifdef DEAL_II_WITH_VTK
+AssertThrow(true, ExcMessage("TODO"));
+
+#endif
+AssertThrow(true, ExcMessage("Trying to update vessel radius data: the code uses tensor_coupling but VTK flag is OFF"));
+  }
   }
 
   template <int dim, int spacedim>
@@ -419,11 +440,14 @@ namespace ImmersX
     std::vector<int> number_of_cells_per_vessel,
     Vector<double> /* full_press */) const
   {
+        std::vector<std::vector<double>> split_pressure;
+
+        if (!this->uses_tensor_product_coupling())
+    {
     Assert(number_of_cells_per_vessel.size() ==
              this->inclusions.get_n_vessels(),
            ExcInternalError());
 
-    std::vector<std::vector<double>> split_pressure;
     unsigned                         starting_inclusion = 0;
 
     for (unsigned int vessel = 0; vessel < number_of_cells_per_vessel.size();
@@ -459,6 +483,16 @@ namespace ImmersX
 
     return split_pressure;
   }
+    else
+    {
+#ifdef DEAL_II_WITH_VTK
+AssertThrow(true, ExcMessage("TODO"));
+
+#endif
+AssertThrow(true, ExcMessage("Trying to update vessel radius data: the code uses tensor_coupling but VTK flag is OFF"));
+return split_pressure;
+  }
+  }
 
 
   template <int dim, int spacedim>
@@ -466,6 +500,8 @@ namespace ImmersX
   CoupledElasticityProblem<dim,
                            spacedim>::refine_and_transfer_around_inclusions()
   {
+    if (!this->uses_tensor_product_coupling())
+    {
     TimerOutput::Scope t(this->computing_timer, "Refine");
     Vector<float>      error_per_cell(this->tria->n_active_cells());
     KellyErrorEstimator<spacedim>::estimate(
@@ -532,6 +568,9 @@ namespace ImmersX
           }
         this->execute_actual_refine_and_transfer();
       }
+    }
+    else
+      this->pcout << "Inclusion refinement is only implemented for Point Coupling type" << std::endl;
   }
 
   // Template instantiations

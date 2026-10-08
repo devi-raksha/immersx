@@ -24,9 +24,9 @@ namespace ImmersX
     compute_pressure_at_immersed_surface();
 
     void
-    update_inclusions_data(std::vector<double> new_data);
+    update_vessel_radius_data(std::vector<double> new_data);
     void
-    update_inclusions_data(std::vector<double> new_data,
+    update_vessel_radius_data(std::vector<double> new_data,
                            std::vector<int>    cells_per_vessel);
 
     std::vector<std::vector<double>>

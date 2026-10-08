@@ -115,7 +115,7 @@ main(int argc, char *argv[])
                       Utilities::MPI::broadcast(MPI_COMM_WORLD,
                                                 pb1D.new_displacement);
 
-                    problem3D.update_inclusions_data(new_displacement_data);
+                    problem3D.update_vessel_radius_data(new_displacement_data);
                     timer.enter_subsection("3 3d timestep");
                     problem3D.run_timestep();
                     timer.leave_subsection();

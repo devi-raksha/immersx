@@ -37,11 +37,6 @@ main(int argc, char *argv[])
       Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
       std::string                      prm_file;
       std::string                      input_file_name;
-      unsigned int                     couplingSampling     = 1;
-      unsigned int                     Pa_to_dyn_conversion = 10;
-      unsigned int                     couplingStart        = 9;
-      unsigned int                     coupling_mode        = 0;
-      double                           baseline_pExt        = 5; // value to test!!
 
       ConditionalOStream pcout(
         std::cout, (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0));
@@ -52,6 +47,12 @@ main(int argc, char *argv[])
         prm_file = "parameters.prm";
         
 #ifdef ENABLE_COUPLED_PROBLEMS
+unsigned int                     couplingSampling     = 1;
+      unsigned int                     Pa_to_dyn_conversion = 10;
+      unsigned int                     couplingStart        = 9;
+      unsigned int                     coupling_mode        = 0;
+      double                           baseline_pExt        = 5; // value to test!!
+      
       if (argc > 2)
         {
           input_file_name = argv[2];
@@ -156,12 +157,12 @@ main(int argc, char *argv[])
 
                         if (coupling_mode == 0)
                           {
-                            problem3D.update_inclusions_data(
+                            problem3D.update_vessel_radius_data(
                               new_displacement_data);
                           }
                         else // if (coupling_mode == 1)
                           {
-                            problem3D.update_inclusions_data(
+                            problem3D.update_vessel_radius_data(
                               new_displacement_data,
                               number_of_cells_per_vessel);
                           }
