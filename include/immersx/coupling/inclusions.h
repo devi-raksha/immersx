@@ -782,7 +782,7 @@ namespace ImmersX
     update_inclusions_data(std::vector<double> new_data)
     {
       AssertThrow(
-        spacedim == 2,
+        spacedim == 3,
         ExcMessage(
           "update of inclusions data is only available for spacedim = 3"));
 
@@ -1271,8 +1271,8 @@ namespace ImmersX
       if (inclusions.size() == 0)
         return;
 
-      if constexpr (spacedim == 2)
-        n_vessels = inclusions.size();
+      // if constexpr (spacedim == 2)
+      //   n_vessels = inclusions.size();
       {
         for (types::global_dof_index inc_number = 0;
              inc_number < inclusions.size();

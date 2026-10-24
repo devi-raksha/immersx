@@ -221,7 +221,7 @@ namespace ImmersX
         const auto        &fe     = reduced_dh.get_fe();
         const unsigned int n_comp = fe.n_components();
 
-                  AssertThrow(vessel_index_of_a_cell.empty(),
+                  AssertThrow(!vessel_index_of_a_cell.empty(),
                 ExcMessage("error in filling the vessels_id #  todo"));
 
         const auto locally_owned_vessels =
@@ -256,7 +256,7 @@ namespace ImmersX
                             this->mpi_communicator,
                             make_array_view(integral));
 
-        pressure.compress(VectorOperation::insert);
+        pressure.compress(VectorOperation::add);
 #endif
       }
   }
@@ -454,15 +454,15 @@ namespace ImmersX
         TimerOutput::Scope t(this->computing_timer, "Setup inclusion");
         this->inclusions.setup_inclusions_particles(*this->tria);
       }
-    else // tensor coupling
-      {
+
+    this->cycle = 0;
+    this->setup_dofs();
+    if (this->uses_tensor_product_coupling())      
+    {
 #ifdef DEAL_II_WITH_VTK
         make_vessel_index_of_a_cell();
 #endif
       }
-
-    this->cycle = 0;
-    this->setup_dofs();
     // assemble_elasticity_system();
   }
 
