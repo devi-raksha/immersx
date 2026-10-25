@@ -128,7 +128,7 @@ namespace ImmersX
           }
         particle = pic.end();
       }
-    this->system_rhs.compress(VectorOperation::add);
+    this->system_rhs.compress(VectorOperation::insert);
   }
 
 
