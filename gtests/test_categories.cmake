@@ -30,6 +30,7 @@ set(IMMERSX_UNIT_TEST_SUITES
 set(IMMERSX_INTEGRATION_TEST_SUITES
     ApplicationRoadmap
     ContributorPhysics
+    CoupledElasticity
     FoundationalApplications
     TractionParameters
     DistributedIDA
@@ -106,6 +107,7 @@ set(_immersx_expected_test_suites
     ApplicationRoadmap
     ContributorCore
     ContributorPhysics
+    CoupledElasticity
     FoundationalApplications
     TractionParameters
     DimensionParameters
