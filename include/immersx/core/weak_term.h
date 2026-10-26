@@ -489,9 +489,8 @@ namespace ImmersX
         if constexpr (support_dim <= dim && SourceField::dimension() == dim &&
                       dim == spacedim)
           if (!matches_source && !matches_target)
-            return assemble_background_trace<VectorType, MatrixType>(observable,
-                                                                     target,
-                                                                     support);
+            return assemble_background_trace<VectorType, MatrixType>(
+              observable, target, support, affine_rhs, affine_data);
         AssertThrow(matches_source || matches_target,
                     dealii::ExcMessage(
                       "An explicit support must use the source or test "
@@ -516,19 +515,22 @@ namespace ImmersX
                 std::enable_if_t<is_physical_quadrature_support<Support>::value,
                                  int> = 0>
       static MatrixStorage<MatrixType>
-      assemble_on_support(const ObservableType   &observable,
-                          const TargetExpression &target,
-                          const Support          &support)
+      assemble_on_support(const ObservableType        &observable,
+                          const TargetExpression      &target,
+                          const Support               &support,
+                          std::shared_ptr<VectorType> *affine_rhs = nullptr,
+                          std::shared_ptr<AffineData<VectorType, MatrixType>>
+                            *affine_data = nullptr)
       {
-        static_assert(Support::intrinsic_dimension == dim - 1,
-                      "Independent trace integration currently requires "
-                      "codimension one.");
+        static_assert(Support::intrinsic_dimension > 0 &&
+                        Support::intrinsic_dimension <= dim,
+                      "Physical integration support must have dimension "
+                      "between one and the background dimension.");
         static_assert(Support::ambient_dimension == spacedim,
                       "Integration support and weak-term fields must share "
                       "an embedding dimension.");
-        return assemble_background_trace<VectorType, MatrixType>(observable,
-                                                                 target,
-                                                                 support);
+        return assemble_background_trace<VectorType, MatrixType>(
+          observable, target, support, affine_rhs, affine_data);
       }
 
       /** Assemble a background-to-background pairing at physical points
@@ -542,9 +544,13 @@ namespace ImmersX
        */
       template <typename VectorType, typename MatrixType, typename Support>
       static MatrixStorage<MatrixType>
-      assemble_background_trace(const ObservableType   &observable,
-                                const TargetExpression &target,
-                                const Support          &support)
+      assemble_background_trace(
+        const ObservableType        &observable,
+        const TargetExpression      &target,
+        const Support               &support,
+        std::shared_ptr<VectorType> *affine_rhs = nullptr,
+        std::shared_ptr<AffineData<VectorType, MatrixType>> *affine_data =
+          nullptr)
       {
         constexpr int support_dim = [] {
           if constexpr (is_physical_quadrature_support<Support>::value)
@@ -584,8 +590,8 @@ namespace ImmersX
         std::map<dealii::CellId, CellQuadrature> cell_quadratures;
         std::uint64_t local_quadrature_point_count = 0;
         const auto    append_point = [&](const CellIterator       &source_cell,
-                                      const dealii::Point<dim> &point,
-                                      const double              weight) {
+                                         const dealii::Point<dim> &point,
+                                         const double              weight) {
           auto &cell_quadrature       = cell_quadratures[source_cell->id()];
           cell_quadrature.source_cell = source_cell;
           cell_quadrature.reference_points.push_back(point);
@@ -809,6 +815,24 @@ namespace ImmersX
                                  sparsity,
                                  target_field.space().mpi_communicator());
 
+        if (affine_data != nullptr)
+          {
+            *affine_data =
+              std::make_shared<AffineData<VectorType, MatrixType>>();
+            (*affine_data)->source_constraints = &source.constraints();
+            (*affine_data)->target_constraints = &target_field.constraints();
+            (*affine_data)->locally_owned = target_field.locally_owned_dofs();
+            (*affine_data)->communicator =
+              target_field.space().mpi_communicator();
+            (*affine_data)->sink_matrix = std::make_shared<MatrixType>();
+            (*affine_data)->sink_sparsity =
+              initialize_weak_matrix(*(*affine_data)->sink_matrix,
+                                     target_field.locally_owned_dofs(),
+                                     source.locally_owned_dofs(),
+                                     sparsity,
+                                     target_field.space().mpi_communicator());
+          }
+
         for (const auto &[cell_id, cell_quadrature] : cell_quadratures)
           {
             (void)cell_id;
@@ -832,18 +856,24 @@ namespace ImmersX
               flags);
             source_values.reinit(cell_quadrature.source_cell);
             target_values.reinit(target_cell);
-            assemble_cell<VectorType>(
-              observable,
-              source,
-              source_values,
-              target,
-              target_values,
-              cell_quadrature.source_cell,
-              target_cell,
-              point_quadrature,
-              *matrix,
-              static_cast<AffineData<VectorType, MatrixType> *>(nullptr),
-              &cell_quadrature.physical_weights);
+            assemble_cell<VectorType>(observable,
+                                      source,
+                                      source_values,
+                                      target,
+                                      target_values,
+                                      cell_quadrature.source_cell,
+                                      target_cell,
+                                      point_quadrature,
+                                      *matrix,
+                                      affine_data != nullptr ?
+                                        affine_data->get() :
+                                        nullptr,
+                                      &cell_quadrature.physical_weights);
+          }
+        if (affine_rhs != nullptr && affine_data != nullptr)
+          {
+            *affine_rhs = std::make_shared<VectorType>();
+            (*affine_data)->refresh(**affine_rhs);
           }
         compress_weak_matrix(*matrix);
         return {std::move(matrix), std::move(matrix_sparsity)};
@@ -1058,8 +1088,8 @@ namespace ImmersX
                        target_field.space().finite_element().degree);
             const dealii::QGauss<dim> quadrature(degree + 1);
             dealii::UpdateFlags       update_flags = dealii::update_JxW_values |
-                                               observable.update_flags() |
-                                               target.update_flags();
+                                                     observable.update_flags() |
+                                                     target.update_flags();
 
             if (&source.space().dof_handler().get_triangulation() !=
                 &target_field.space().dof_handler().get_triangulation())
@@ -1841,7 +1871,7 @@ namespace ImmersX
                   point.weight               = target_values.JxW(q);
                   point.source_entity_id     = cell->global_active_cell_index();
                   point.representative_qpoint = q;
-                  point.stable_id             = static_cast<std::uint64_t>(
+                  point.stable_id = static_cast<std::uint64_t>(
                                       cell->global_active_cell_index()) *
                                       quadrature.size() +
                                     q;
@@ -2577,7 +2607,7 @@ namespace ImmersX
           auto entry         = std::make_unique<Entry>();
           entry->dof_handler = &input_field.dof_handler();
           entry->reusable    = reuse_across_cells_ &&
-                            &input_field.mapping() == integration_mapping_;
+                               &input_field.mapping() == integration_mapping_;
           std::unique_ptr<dealii::Quadrature<dim>> quadrature;
           if (!entry->reusable)
             {
@@ -2829,7 +2859,7 @@ namespace ImmersX
           std::max(observable.polynomial_degree(),
                    target_field.space().finite_element().degree);
         const dealii::QGauss<dim> quadrature(degree + 1);
-        const auto                flags = dealii::update_JxW_values |
+        const auto flags = dealii::update_JxW_values |
                            dealii::update_quadrature_points |
                            observable.update_flags() | target.update_flags();
         dealii::FEValues<dim, spacedim> source_values(
@@ -3072,7 +3102,7 @@ namespace ImmersX
           std::max(observable.polynomial_degree(),
                    target_field.space().finite_element().degree);
         const dealii::QGauss<dim> quadrature(degree + 1);
-        const auto                flags = dealii::update_JxW_values |
+        const auto flags = dealii::update_JxW_values |
                            dealii::update_quadrature_points |
                            observable.update_flags() | target.update_flags();
 
@@ -3633,9 +3663,9 @@ namespace ImmersX
           n_target_dofs);
 
         ParticleCouplingParameters<SourceField::spacedimension()>
-          particle_parameters(
-            "/ImmersX/weak term/lifted-target/" +
-            std::to_string(reinterpret_cast<std::uintptr_t>(&source)));
+                                                        particle_parameters(
+                                                          "/ImmersX/weak term/lifted-target/" +
+                                                          std::to_string(reinterpret_cast<std::uintptr_t>(&source)));
         ParticleCoupling<SourceField::spacedimension()> distribution(
           particle_parameters);
         distribution.initialize_particle_handler(*source_tria,
@@ -4502,9 +4532,9 @@ namespace ImmersX
           const auto pairing = make_pairing(builder, target_, region_);
           const auto frozen  = observable_.template frozen_values<VectorType>();
           term.residual([pairing, frozen](const auto &) {
-            const auto                affine_rhs = pairing.affine_rhs_factory ?
-                                                     pairing.affine_rhs_factory() :
-                                                     pairing.affine_rhs;
+            const auto affine_rhs = pairing.affine_rhs_factory ?
+                                      pairing.affine_rhs_factory() :
+                                      pairing.affine_rhs;
             typename Model::Operation result;
             result.reinit_vector =
               pairing.operator_with_matrix.view.reinit_range_vector;
@@ -4705,7 +4735,7 @@ namespace ImmersX
           builder.term(multiplier, suffix + ".multiplier")
             .residual([pairing, source_id, sign](const auto &context) {
               auto       result = sign * (pairing.operator_with_matrix.view *
-                                    context.state(source_id));
+                                          context.state(source_id));
               const auto affine_rhs = pairing.affine_rhs_factory ?
                                         pairing.affine_rhs_factory() :
                                         pairing.affine_rhs;
@@ -4868,7 +4898,11 @@ namespace ImmersX
                 if constexpr (is_physical_quadrature_support<Support>::value)
                   return Assembly::template assemble_on_support<VectorType,
                                                                 MatrixType>(
-                    observable_, target, support_);
+                    observable_,
+                    target,
+                    support_,
+                    &result.affine_rhs,
+                    &affine_data);
                 else if constexpr (std::is_same_v<
                                      Support,
                                      BoundaryIntegrationSupport<
@@ -4933,7 +4967,7 @@ namespace ImmersX
                                       std::decay_t<Target>>::value,
                                     dealii::ExcMessage(
                                       "Boundary weak terms do not support "
-                                                       "lifted targets."));
+                                      "lifted targets."));
                         return Assembly::template assemble_boundary<VectorType,
                                                                     MatrixType>(
                           observable_,

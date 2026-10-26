@@ -10,6 +10,7 @@
 #ifndef immersx_tensor_product_lift_h
 #define immersx_tensor_product_lift_h
 
+#include <deal.II/base/derivative_form.h>
 #include <deal.II/base/parameter_acceptor.h>
 #include <deal.II/base/patterns.h>
 #include <deal.II/base/quadrature_lib.h>
@@ -428,6 +429,68 @@ namespace ImmersX
         thickness,
         representative_qpoint,
         representative_basis);
+    }
+
+    /** Lift with the complete representative tangent space. A sheet in 3D
+     * extrudes along its normal, rather than perpendicular to one tangent.
+     */
+    std::vector<Point>
+    transform(const dealii::Point<spacedim>                          &origin,
+              const dealii::DerivativeForm<1, reduced_dim, spacedim> &jacobian,
+              const double       representative_weight,
+              const double       thickness,
+              const unsigned int representative_qpoint) const
+    {
+      if constexpr (reduced_dim == 1)
+        {
+          dealii::Tensor<1, spacedim> tangent;
+          for (unsigned int d = 0; d < spacedim; ++d)
+            tangent[d] = jacobian[d][0];
+          return transform(origin,
+                           tangent,
+                           representative_weight,
+                           thickness,
+                           representative_qpoint);
+        }
+      else
+        {
+          static_assert(reduced_dim == 2 && surface_dim == 3 && spacedim == 3 &&
+                          n_components == 1,
+                        "Sheet lifting requires a scalar line section in 3D.");
+          AssertThrow(parameters_.section.inclusion_type == "hyper_cube",
+                      dealii::ExcMessage(
+                        "A sheet-to-volume lift needs an interval cross "
+                        "section (Geometry type = hyper_cube)."));
+          dealii::Tensor<1, 3> first, second;
+          for (unsigned int d = 0; d < 3; ++d)
+            {
+              first[d]  = jacobian[d][0];
+              second[d] = jacobian[d][1];
+            }
+          auto normal = dealii::cross_product_3d(first, second);
+          AssertThrow(normal.norm() > 0.,
+                      dealii::ExcMessage("Degenerate representative sheet."));
+          normal /= normal.norm();
+          const auto        &quadrature = section_->get_global_quadrature();
+          std::vector<Point> points;
+          points.reserve(quadrature.size());
+          for (unsigned int q = 0; q < quadrature.size(); ++q)
+            {
+              Point point;
+              point.point =
+                origin + normal * (thickness * quadrature.point(q)[0]);
+              point.representative_point = origin;
+              point.weight =
+                representative_weight * thickness * quadrature.weight(q);
+              point.representative_qpoint = representative_qpoint;
+              point.section_qpoint        = q;
+              point.selected_modes        = selected_modes();
+              point.mode_values =
+                section_->get_transformed_mode_values(q, normal);
+              points.push_back(std::move(point));
+            }
+          return points;
+        }
     }
 
     /** Apply the common reference-section transformation to TensorProductSpace

@@ -10,6 +10,7 @@
 #include <deal.II/fe/fe_system.h>
 
 #include <deal.II/grid/grid_generator.h>
+#include <deal.II/grid/grid_tools.h>
 
 #include <deal.II/numerics/vector_tools.h>
 
@@ -23,6 +24,7 @@
 #include <immersx/core/weak_term.h>
 
 #include <algorithm>
+#include <numeric>
 #include <set>
 
 #include "test_paths.h"
@@ -423,7 +425,7 @@ TEST(LiftedIntegrationSupport,
   ParameterAcceptor::clear();
   LiftedLineFixture             fixture;
   FiniteElementSpace<1, 3>      space(fixture.domain.triangulation(),
-                                 std::make_unique<FE_Q<1, 3>>(1));
+                                      std::make_unique<FE_Q<1, 3>>(1));
   const auto                    view = space.view();
   TensorProductLift<1, 2, 3, 3> geometry("/Selected vector modes/");
   geometry.thickness                     = "0.1";
@@ -684,4 +686,71 @@ TEST(LiftedIntegrationSupport,
                      bulk_space.locally_relevant_dofs());
   constraints.close();
   EXPECT_THROW(model.evaluate_row(line.id(), context, residual), ExceptionBase);
+}
+
+namespace
+{
+  template <int dim, int spacedim>
+  void
+  check_volume_lift()
+  {
+    ParameterAcceptor::clear();
+    DomainParameters<dim, spacedim> parameters("/Normal volume source/");
+    parameters.arguments_for_grid = "-1: 1: false";
+    Domain<dim, spacedim> domain(parameters);
+    domain.make_grid();
+    if constexpr (dim == 2)
+      GridTools::transform(
+        [](const Point<3> &p) {
+          return Point<3>(p[0], p[1] / std::sqrt(2.), p[1] / std::sqrt(2.));
+        },
+        domain.triangulation());
+    TensorProductLift<dim, spacedim, spacedim> lift("/Normal volume geometry/");
+    lift.section.inclusion_type        = "hyper_cube";
+    lift.section.inclusion_degree      = 0;
+    lift.section.refinement_level      = 0;
+    lift.section.selected_coefficients = {0};
+    lift.section.n_q_points            = 2;
+    lift.representative_n_q_points     = 2;
+    lift.thickness                     = "0.25";
+    const auto support                 = domain.lift(lift);
+    double     measure                 = 0.;
+    for (const auto &p : support.locally_owned_quadrature_points())
+      {
+        measure += p.weight;
+        const auto offset = p.point - p.representative_point;
+        EXPECT_NEAR(offset[0], 0., 1.e-12);
+        if constexpr (dim == 2)
+          {
+            EXPECT_NEAR(offset[1] + offset[2], 0., 1.e-12);
+          }
+      }
+    EXPECT_NEAR(Utilities::MPI::sum(measure, domain.communicator()),
+                std::pow(2., dim) * std::pow(0.5, spacedim - dim),
+                1.e-11);
+    FiniteElementSpace<dim, spacedim> space(
+      domain.triangulation(), std::make_unique<FE_Q<dim, spacedim>>(1));
+    auto       view       = space.view();
+    const auto observable = make_lift(value(view.field("scalar")), lift);
+    double     observable_measure = 0.;
+    for (const auto &p : observable.lifted_points())
+      {
+        observable_measure += p.weight;
+        EXPECT_NEAR(std::accumulate(p.basis_values.begin(),
+                                    p.basis_values.end(),
+                                    0.),
+                    1.,
+                    1.e-12);
+      }
+    EXPECT_NEAR(Utilities::MPI::sum(observable_measure, domain.communicator()),
+                std::pow(2., dim) * std::pow(0.5, spacedim - dim),
+                1.e-11);
+  }
+} // namespace
+
+TEST(LiftedIntegrationSupport, BOTH_NormalVolumeLifts)
+{
+  check_volume_lift<1, 2>();
+  check_volume_lift<1, 3>();
+  check_volume_lift<2, 3>();
 }

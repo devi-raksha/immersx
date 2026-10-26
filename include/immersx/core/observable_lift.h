@@ -48,10 +48,10 @@ namespace ImmersX
             int n_components = 1>
   class LiftedObservable
   {
-    static_assert(reduced_dim == 1,
-                  "The Observable lift currently supports curve sources.");
-    static_assert(surface_dim == 2,
-                  "The Observable lift currently supports surface targets.");
+    static_assert(
+      reduced_dim >= 1 && reduced_dim < surface_dim &&
+        surface_dim <= spacedim && spacedim <= 3,
+      "Observable lifting requires 1 <= dim < support <= spacedim <= 3.");
     static_assert(std::is_arithmetic_v<typename SourceObservable::value_type>,
                   "The initial Observable lift supports scalar quantities.");
 
@@ -74,9 +74,9 @@ namespace ImmersX
     using Lift =
       TensorProductLift<reduced_dim, surface_dim, spacedim, n_components>;
     using Support  = TensorProductLiftSupport<reduced_dim,
-                                             surface_dim,
-                                             spacedim,
-                                             n_components>;
+                                              surface_dim,
+                                              spacedim,
+                                              n_components>;
     using Operator = dealii::LinearOperator<value_type, state_type>;
 
     LiftedObservable(SourceObservable source, const Lift &lift)
@@ -1003,7 +1003,8 @@ namespace ImmersX
       const auto &field      = source();
       const auto &quadrature = support_->representative_quadrature();
       const auto  flags = dealii::update_values | dealii::update_JxW_values |
-                         dealii::update_quadrature_points;
+                          dealii::update_quadrature_points |
+                          dealii::update_jacobians;
       dealii::FEValues<reduced_dim, spacedim> values(
         field.mapping(), field.space().finite_element(), quadrature, flags);
       for (const auto &cell : field.dof_handler().active_cell_iterators())
@@ -1013,9 +1014,6 @@ namespace ImmersX
             std::vector<dealii::types::global_dof_index> indices(
               cell->get_fe().n_dofs_per_cell());
             cell->get_dof_indices(indices);
-            dealii::Tensor<1, spacedim> tangent;
-            tangent = cell->vertex(1) - cell->vertex(0);
-            tangent /= tangent.norm();
             const auto &view = values[field.extractor()];
             for (const auto q : values.quadrature_point_indices())
               {
@@ -1027,8 +1025,12 @@ namespace ImmersX
                 AssertThrow(std::isfinite(thickness) && thickness > 0.,
                             dealii::ExcMessage(
                               "Lift thickness must be finite and positive."));
-                const auto transformed = support_->transform(
-                  representative_point, tangent, values.JxW(q), thickness, q);
+                const auto transformed =
+                  support_->transform(representative_point,
+                                      values.jacobian(q),
+                                      values.JxW(q),
+                                      thickness,
+                                      q);
                 for (unsigned int section_q = 0; section_q < transformed.size();
                      ++section_q)
                   {

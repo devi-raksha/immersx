@@ -11,6 +11,10 @@ skeleton in `.github/CHANGELOG_TEMPLATE.md`.
 
 ### Added
 
+- [PR #N](https://github.com/luca-heltai/immersx/pull/N) Integrate known volume sources and linear weak terms on independent physical volume supports, retaining nonzero essential offsets.
+
+- [PR #N](https://github.com/luca-heltai/immersx/pull/N) Lift scalar representative fields and geometric integration supports to volumes in codimension one and two, using the complete surface tangent space for normal sheet extrusion.
+
 - [PR #N](https://github.com/luca-heltai/immersx/pull/N) Solve harmonic matrix-plus-excess-fiber systems in 2D and 3D with independent meshes, real and imaginary displacement-continuity constraints, frequency sweeps, and displacement and multiplier output.
 
 - [PR #N](https://github.com/luca-heltai/immersx/pull/N) Compose harmonic elasticity Problems with `LinearAdapter` using separate real and imaginary displacement Fields, material-dependent damping, and phased body and Neumann loads.
