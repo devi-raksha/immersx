@@ -367,9 +367,10 @@ namespace ImmersX
     }
 
     /** Reuse an explicitly prepared direct factorization.
-     * If its absolute residual exceeds Tolerance, apply one residual correction
-     * with the same factorization. This bounded refinement reduces LU roundoff;
-     * it does not guarantee convergence to an arbitrary requested tolerance.
+     * For the default direct backend, apply one residual correction with the
+     * same factorization if its absolute residual exceeds Tolerance. This
+     * bounded refinement reduces LU roundoff; it does not guarantee convergence
+     * to an arbitrary requested tolerance.
      */
     void
     solve_with_current_direct(GlobalVectorType &state) const
@@ -393,30 +394,28 @@ namespace ImmersX
       composition_.evaluate_residual(0., state, nullptr, residual);
       residual *= -1.;
 
-      auto       rhs           = composition_.pack(residual);
-      auto       result        = composition_.make_state();
-      auto       solution      = composition_.pack(result);
-      const auto apply_inverse = [this](auto &destination, const auto &source) {
+      auto rhs      = composition_.pack(residual);
+      auto result   = composition_.make_state();
+      auto solution = composition_.pack(result);
 #ifdef DEAL_II_WITH_MUMPS
-        if (mumps_solver_)
-          mumps_solver_->vmult(destination, source);
-        else
+      if (mumps_solver_)
+        mumps_solver_->vmult(solution, rhs);
+      else
 #endif
-          direct_solver_->solve(destination, source);
-      };
-      apply_inverse(solution, rhs);
-
-      // A successful LU solve can still lose accuracy on saddle-point
-      // systems. Refine once with the cached matrix and factorization, so
-      // explicit factorization reuse also corrects the system that was saved.
-      auto defect = rhs;
-      direct_matrix_->vmult(defect, solution);
-      defect.sadd(-1., 1., rhs);
-      if (defect.l2_norm() > parameters_.tolerance)
         {
-          auto correction = composition_.pack(result);
-          apply_inverse(correction, defect);
-          solution += correction;
+          direct_solver_->solve(solution, rhs);
+          // A successful LU solve can still lose accuracy on saddle-point
+          // systems. Refine once with the cached matrix and factorization, so
+          // explicit factorization reuse also corrects the saved system.
+          auto defect = rhs;
+          direct_matrix_->vmult(defect, solution);
+          defect.sadd(-1., 1., rhs);
+          if (defect.l2_norm() > parameters_.tolerance)
+            {
+              auto correction = composition_.pack(result);
+              direct_solver_->solve(correction, defect);
+              solution += correction;
+            }
         }
       composition_.unpack(solution, state);
       pcout << "LinearAdapter: direct solve finished." << std::endl;
