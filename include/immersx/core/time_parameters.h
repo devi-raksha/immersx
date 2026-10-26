@@ -20,6 +20,8 @@
 #  include <immersx/compatibility/dealii_9_9/ida.h>
 #endif
 
+#include <immersx/core/ida_tolerance_ramp.h>
+
 #include <string>
 
 namespace ImmersX
@@ -123,6 +125,9 @@ namespace ImmersX
 #endif
     }
 
+    IDAToleranceRamp tolerance_ramp;
+    bool             print_statistics = false;
+
     std::string correction_type_at_initial_time = "none";
     std::string correction_type_after_restart   = "none";
 
@@ -197,6 +202,8 @@ namespace ImmersX
     {
 #ifdef DEAL_II_WITH_SUNDIALS
       Controls::add_parameters(prm, false, false);
+      tolerance_ramp.add_parameters(prm);
+      prm.add_parameter("Print current statistics", print_statistics);
       prm.enter_subsection("Initial condition correction parameters");
       prm.add_parameter("Correction type at initial time",
                         correction_type_at_initial_time,

@@ -1373,12 +1373,18 @@ namespace ImmersX::Compatibility
       std::function<IndexSet()> differential_components;
 
       /**
-       * Return a vector whose components are the weights used by IDA to compute
-       * the vector norm. The implementation of this function is optional. If
-       * the user does not provide an implementation, the weights are assumed to
-       * be all ones.
+       * Return componentwise absolute tolerances. When unset, IDA uses
+       * AdditionalData::absolute_tolerance for every component.
        */
       std::function<VectorType &()> get_local_tolerances;
+
+      /** Optional inverse error weights. Exceptions are captured at the C
+       * boundary and rethrown by solve_dae(). Takes precedence over scalar
+       * and vector tolerances; keep wrapper-owned userdata unchanged.
+       */
+      std::function<void(const VectorType &, VectorType &)>
+        compute_error_weights;
+
 
       /**
        * Return the IDA inequality constraint vector, if used. Entries follow

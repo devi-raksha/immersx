@@ -207,6 +207,19 @@ end
   EXPECT_DOUBLE_EQ(data.absolute_tolerance, 1.e-4);
 }
 
+TEST(DistributedIDA, NativeSetupFailureThrows)
+{
+  TimeIntervalParameters time;
+  IDAParameters          parameters;
+  parameters.maximum_order = 6;
+  Adapter adapter(time, parameters, MPI_COMM_SELF);
+  add_identity_field(adapter, 1);
+  auto y = adapter.make_state(), yp = adapter.make_state();
+  y  = 1.;
+  yp = -1.;
+  EXPECT_THROW(adapter.solve(y, yp), dealii::ExceptionBase);
+}
+
 TEST(DistributedIDA, NativeWorkLimitThrows)
 {
   TimeIntervalParameters time;
@@ -225,7 +238,9 @@ TEST(DistributedIDA, NativeWorkLimitThrows)
   adapter.set_output_step(
     [&](double t, const auto &, const auto &, unsigned int step) {
       if (step == 0)
-        EXPECT_DOUBLE_EQ(t, time.initial_time);
+        {
+          EXPECT_DOUBLE_EQ(t, time.initial_time);
+        }
     });
   EXPECT_THROW(adapter.solve(y, yp), dealii::ExceptionBase);
 }
@@ -409,6 +424,12 @@ TEST(DistributedIDA, RestartCallbackPrecedesResetAndCanResizeState) // NOLINT
   auto         dot              = adapter.make_state();
   unsigned int restart_count    = 0;
   unsigned int consistent_count = 0;
+  unsigned int tolerance_builds = 0;
+  adapter.set_local_tolerances(field.fields(), [&](FieldVector &values) {
+    ++tolerance_builds;
+    EXPECT_EQ(values.size(), tolerance_builds == 1 ? 2u : 3u);
+    values = 1.e-6;
+  });
   adapter.set_compute_consistent_initial_conditions(
     [&](const double, GlobalVector &y, GlobalVector &y_dot) {
       ++consistent_count;
@@ -430,6 +451,7 @@ TEST(DistributedIDA, RestartCallbackPrecedesResetAndCanResizeState) // NOLINT
   EXPECT_GT(adapter.solve(state, dot), 0u);
   EXPECT_GE(restart_count, 2u);
   EXPECT_EQ(consistent_count, 2u);
+  EXPECT_EQ(tolerance_builds, 2u);
   EXPECT_EQ(state.block(0).size(), 3u);
   EXPECT_EQ(dot.block(0).size(), 3u);
 }

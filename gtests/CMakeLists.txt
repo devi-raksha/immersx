@@ -52,6 +52,7 @@ set(_public_headers
     immersx/compatibility/dealii_9_9/utilities.h
     immersx/core/sundials_kinsol_adapter.h
     immersx/core/time_parameters.h
+    immersx/core/ida_tolerance_ramp.h
     immersx/core/linear_adapter.h
     immersx/core/matrix_operator.h
     immersx/core/observable.h

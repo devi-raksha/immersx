@@ -45,6 +45,7 @@
 
 #  include <iomanip>
 #  include <iostream>
+#  include <utility>
 
 
 #endif // DEAL_II_WITH_SUNDIALS
@@ -284,7 +285,20 @@ namespace ImmersX::Compatibility
         yy,
         yp);
       AssertThrow(status >= 0, ExcIDAError(status));
-      if (get_local_tolerances)
+      if (compute_error_weights)
+        {
+          status = IDAWFtolerances(
+            ida_mem, [](N_Vector y, N_Vector weights, void *user_data) -> int {
+              auto &solver = *static_cast<IDA<VectorType> *>(user_data);
+              return Utilities::call_and_possibly_capture_exception(
+                solver.compute_error_weights,
+                solver.pending_exception,
+                *internal::unwrap_nvector_const<VectorType>(y),
+                *internal::unwrap_nvector<VectorType>(weights));
+            });
+          AssertThrow(status >= 0, ExcIDAError(status));
+        }
+      else if (get_local_tolerances)
         {
           const auto abs_tols =
             internal::make_nvector_view(get_local_tolerances()
@@ -578,6 +592,11 @@ namespace ImmersX::Compatibility
           // (re)initialization of the vectors
           status =
             IDACalcIC(ida_mem, IDA_Y_INIT, current_time + current_time_step);
+          if (pending_exception)
+            {
+              auto exception = std::exchange(pending_exception, nullptr);
+              std::rethrow_exception(exception);
+            }
           AssertThrow(status >= 0, ExcIDAError(status));
 
           status = IDAGetConsistentIC(ida_mem, yy, yp);
@@ -588,6 +607,11 @@ namespace ImmersX::Compatibility
           status = IDACalcIC(ida_mem,
                              IDA_YA_YDP_INIT,
                              current_time + current_time_step);
+          if (pending_exception)
+            {
+              auto exception = std::exchange(pending_exception, nullptr);
+              std::rethrow_exception(exception);
+            }
           AssertThrow(status >= 0, ExcIDAError(status));
 
           status = IDAGetConsistentIC(ida_mem, yy, yp);
