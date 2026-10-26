@@ -731,11 +731,17 @@ namespace ImmersX::Compatibility
          * using `prm`.
          */
         void
-        add_parameters(ParameterHandler &prm)
+        add_parameters(ParameterHandler &prm,
+                       const bool        include_time_parameters  = true,
+                       const bool        include_correction_types = true)
         {
-          prm.add_parameter("Initial time", initial_time);
-          prm.add_parameter("Final time", final_time);
-          prm.add_parameter("Time interval between each output", output_period);
+          if (include_time_parameters)
+            {
+              prm.add_parameter("Initial time", initial_time);
+              prm.add_parameter("Final time", final_time);
+              prm.add_parameter("Time interval between each output",
+                                output_period);
+            }
 
           prm.enter_subsection("Running parameters");
           prm.add_parameter("Initial step size", initial_step_size);
@@ -780,28 +786,31 @@ namespace ImmersX::Compatibility
           prm.leave_subsection();
 
           prm.enter_subsection("Initial condition correction parameters");
-          prm.add_parameter(
-            "Correction type at initial time",
-            ic_type,
-            "This is one of the following three options for the "
-            "initial condition calculation. \n"
-            " none: do not try to make initial conditions consistent. \n"
-            " use_y_diff: compute the algebraic components of y and differential\n"
-            "    components of y_dot, given the differential components of y. \n"
-            "    This option requires that the user specifies differential and \n"
-            "    algebraic components in the function differential_components().\n"
-            " use_y_dot: compute all components of y, given y_dot.");
-          prm.add_parameter(
-            "Correction type after restart",
-            reset_type,
-            "This is one of the following three options for the "
-            "initial condition calculation. \n"
-            " none: do not try to make initial conditions consistent. \n"
-            " use_y_diff: compute the algebraic components of y and differential\n"
-            "    components of y_dot, given the differential components of y. \n"
-            "    This option requires that the user specifies differential and \n"
-            "    algebraic components in the function differential_components().\n"
-            " use_y_dot: compute all components of y, given y_dot.");
+          if (include_correction_types)
+            {
+              prm.add_parameter(
+                "Correction type at initial time",
+                ic_type,
+                "This is one of the following three options for the "
+                "initial condition calculation. \n"
+                " none: do not try to make initial conditions consistent. \n"
+                " use_y_diff: compute the algebraic components of y and differential\n"
+                "    components of y_dot, given the differential components of y. \n"
+                "    This option requires that the user specifies differential and \n"
+                "    algebraic components in the function differential_components().\n"
+                " use_y_dot: compute all components of y, given y_dot.");
+              prm.add_parameter(
+                "Correction type after restart",
+                reset_type,
+                "This is one of the following three options for the "
+                "initial condition calculation. \n"
+                " none: do not try to make initial conditions consistent. \n"
+                " use_y_diff: compute the algebraic components of y and differential\n"
+                "    components of y_dot, given the differential components of y. \n"
+                "    This option requires that the user specifies differential and \n"
+                "    algebraic components in the function differential_components().\n"
+                " use_y_dot: compute all components of y, given y_dot.");
+            }
           prm.add_parameter("Maximum number of nonlinear iterations",
                             maximum_non_linear_iterations_ic);
           prm.add_parameter(

@@ -77,9 +77,14 @@ controls.linear_tolerance_factor = 0.05;
 ida.set_additional_data(controls);
 ```
 
-The compatibility `AdditionalData::add_parameters()` exposes all upstream
-controls when used directly with a `ParameterHandler`; the adapter's
-`IDAParameters` continues to expose its existing parameter-file subset.
+Both `IDAParameters` and the compatibility
+`AdditionalData::add_parameters()` expose all backported solver controls.
+The adapter keeps the simulation interval in `TimeIntervalParameters`.
+The `Running parameters` subsection includes minimum/maximum step sizes,
+the internal-step limit per output, and error/convergence failure limits.
+The `Nonlinear solver`, `Linear solver`, `Step adaptivity`, and
+`Initial condition correction parameters` subsections expose the remaining
+Newton, linear solve, step-growth, and initial-correction controls.
 Adaptivity controls require SUNDIALS 6.2 or newer; the constraint-failure limit
 requires 7.6 or newer.
 

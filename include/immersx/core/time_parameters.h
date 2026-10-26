@@ -98,58 +98,96 @@ namespace ImmersX
 
   /** IDA-specific adaptive integration and nonlinear-solver controls. */
   class IDAParameters : public dealii::ParameterAcceptor
+#ifdef DEAL_II_WITH_SUNDIALS
+    ,
+                        public Compatibility::SUNDIALS::IDA<
+                          dealii::Vector<double>>::AdditionalData
+#endif
   {
   public:
+#ifdef DEAL_II_WITH_SUNDIALS
+    using Controls =
+      Compatibility::SUNDIALS::IDA<dealii::Vector<double>>::AdditionalData;
+#endif
     explicit IDAParameters(const std::string &subsection = "/IDA/")
       : dealii::ParameterAcceptor(subsection)
-    {}
-
+    {
 #ifdef DEAL_II_WITH_SUNDIALS
-    double       initial_step_size                 = 1.e-5;
-    double       minimum_step_size                 = 0.;
-    unsigned int maximum_order                     = 1;
-    unsigned int maximum_non_linear_iterations     = 50;
-    double       absolute_tolerance                = 1.e-4;
-    double       relative_tolerance                = 1.e-4;
-    bool         ignore_algebraic_terms_for_errors = true;
-    std::string  correction_type_at_initial_time   = "none";
-    std::string  correction_type_after_restart     = "none";
-    unsigned int maximum_non_linear_iterations_ic  = 5;
-    double       ls_norm_factor                    = 1.;
+      // Preserve the adapter defaults used by existing parameter files.
+      initial_step_size             = 1.e-5;
+      minimum_step_size             = 0.;
+      maximum_order                 = 1;
+      maximum_non_linear_iterations = 50;
+      absolute_tolerance = relative_tolerance = 1.e-4;
+      ls_norm_factor                          = 1.;
 #endif
+    }
+
+    std::string correction_type_at_initial_time = "none";
+    std::string correction_type_after_restart   = "none";
 
 #ifdef DEAL_II_WITH_SUNDIALS
     template <typename GlobalVectorType>
     typename Compatibility::SUNDIALS::IDA<GlobalVectorType>::AdditionalData
     additional_data(const TimeIntervalParameters &interval) const
     {
-      using AdditionalData =
+      using Data =
         typename Compatibility::SUNDIALS::IDA<GlobalVectorType>::AdditionalData;
-
-      AdditionalData data;
-      const auto     correction_type = [](const std::string &value) {
-        if (value == "use_y_diff")
-          return AdditionalData::use_y_diff;
-        if (value == "use_y_dot")
-          return AdditionalData::use_y_dot;
-        return AdditionalData::none;
-      };
-
-      data.initial_time                  = interval.initial_time;
-      data.final_time                    = interval.final_time;
-      data.output_period                 = interval.output_time_interval;
-      data.initial_step_size             = initial_step_size;
-      data.minimum_step_size             = minimum_step_size;
+      Data data;
+      data.initial_step_size            = initial_step_size;
+      data.minimum_step_size            = minimum_step_size;
+      data.maximum_step_size            = maximum_step_size;
+      data.maximum_number_of_steps      = maximum_number_of_steps;
+      data.maximum_error_test_failures  = maximum_error_test_failures;
+      data.maximum_convergence_failures = maximum_convergence_failures;
+      data.nonlinear_convergence_coefficient =
+        nonlinear_convergence_coefficient;
       data.maximum_order                 = maximum_order;
       data.maximum_non_linear_iterations = maximum_non_linear_iterations;
       data.absolute_tolerance            = absolute_tolerance;
       data.relative_tolerance            = relative_tolerance;
       data.ignore_algebraic_terms_for_errors =
         ignore_algebraic_terms_for_errors;
-      data.ic_type    = correction_type(correction_type_at_initial_time);
-      data.reset_type = correction_type(correction_type_after_restart);
       data.maximum_non_linear_iterations_ic = maximum_non_linear_iterations_ic;
       data.ls_norm_factor                   = ls_norm_factor;
+      data.maximum_number_of_steps_ic       = maximum_number_of_steps_ic;
+      data.maximum_number_of_jacobians_ic   = maximum_number_of_jacobians_ic;
+      data.maximum_number_of_backtracks_ic  = maximum_number_of_backtracks_ic;
+      data.line_search_enabled_ic           = line_search_enabled_ic;
+      data.step_tolerance_ic                = step_tolerance_ic;
+      data.nonlinear_convergence_coefficient_ic =
+        nonlinear_convergence_coefficient_ic;
+      data.linear_tolerance_factor = linear_tolerance_factor;
+      data.increment_factor        = increment_factor;
+      data.linear_solution_scaling = linear_solution_scaling;
+#  if DEAL_II_SUNDIALS_VERSION_GTE(6, 2, 0)
+      data.delta_cj_lsetup  = delta_cj_lsetup;
+      data.eta_min          = eta_min;
+      data.eta_max          = eta_max;
+      data.eta_low          = eta_low;
+      data.eta_min_err_fail = eta_min_err_fail;
+      data.eta_conv_fail    = eta_conv_fail;
+      data.eta_min_fixed    = eta_min_fixed;
+      data.eta_max_fixed    = eta_max_fixed;
+#  endif
+#  if DEAL_II_SUNDIALS_VERSION_GTE(7, 6, 0)
+      data.maximum_constraint_failures = maximum_constraint_failures;
+#  endif
+      const auto correction = [](const std::string &value) {
+        if (value == "use_y_diff")
+          return Data::use_y_diff;
+        else if (value == "use_y_dot")
+          return Data::use_y_dot;
+        AssertThrow(value == "none",
+                    dealii::ExcMessage("Invalid IDA correction type: " +
+                                       value));
+        return Data::none;
+      };
+      data.initial_time  = interval.initial_time;
+      data.final_time    = interval.final_time;
+      data.output_period = interval.output_time_interval;
+      data.ic_type       = correction(correction_type_at_initial_time);
+      data.reset_type    = correction(correction_type_after_restart);
       return data;
     }
 #endif
@@ -158,21 +196,7 @@ namespace ImmersX
     declare_parameters(dealii::ParameterHandler &prm) override
     {
 #ifdef DEAL_II_WITH_SUNDIALS
-      prm.enter_subsection("Running parameters");
-      prm.add_parameter("Initial step size", initial_step_size);
-      prm.add_parameter("Minimum step size", minimum_step_size);
-      prm.add_parameter("Maximum order of BDF", maximum_order);
-      prm.add_parameter("Maximum number of nonlinear iterations",
-                        maximum_non_linear_iterations);
-      prm.leave_subsection();
-
-      prm.enter_subsection("Error control");
-      prm.add_parameter("Absolute error tolerance", absolute_tolerance);
-      prm.add_parameter("Relative error tolerance", relative_tolerance);
-      prm.add_parameter("Ignore algebraic terms for error computations",
-                        ignore_algebraic_terms_for_errors);
-      prm.leave_subsection();
-
+      Controls::add_parameters(prm, false, false);
       prm.enter_subsection("Initial condition correction parameters");
       prm.add_parameter("Correction type at initial time",
                         correction_type_at_initial_time,
@@ -184,11 +208,6 @@ namespace ImmersX
                         "",
                         dealii::Patterns::Selection(
                           "none|use_y_diff|use_y_dot"));
-      prm.add_parameter("Maximum number of nonlinear iterations",
-                        maximum_non_linear_iterations_ic);
-      prm.add_parameter(
-        "Factor to use when converting from the integrator tolerance to the linear solver tolerance",
-        ls_norm_factor);
       prm.leave_subsection();
 #else
       (void)prm;
