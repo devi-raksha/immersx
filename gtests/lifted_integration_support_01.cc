@@ -20,7 +20,10 @@
 #include <immersx/core/lifted_integration_support.h>
 #include <immersx/core/observable_lift.h>
 #include <immersx/core/state.h>
+#include <immersx/core/sundials_ida_adapter.h>
 #include <immersx/core/weak_term.h>
+#include <immersx/io/utils.h>
+#include <immersx/physics/elastodynamics_semidiscrete.h>
 
 #include <algorithm>
 #include <set>
@@ -685,3 +688,102 @@ TEST(LiftedIntegrationSupport,
   constraints.close();
   EXPECT_THROW(model.evaluate_row(line.id(), context, residual), ExceptionBase);
 }
+
+#ifdef DEAL_II_WITH_SUNDIALS
+TEST(LiftedIntegrationSupport, BOTH_ElastodynamicsMovingDirichlet)
+{
+  ParameterAcceptor::clear();
+  LiftedLineFixture           fixture;
+  ElastodynamicsParameters<3> parameters;
+  ElastodynamicsSolver<3>     problem(parameters);
+  initialize_parameters_from_string(R"(
+    subsection Elastodynamics
+      subsection Functions
+        subsection Displacement boundary
+          set Function expression = t^3; -2*t^3; 3*t^3
+        end
+        subsection Velocity boundary
+          set Function expression = 3*t^2; -6*t^2; 9*t^2
+        end
+      end
+    end
+  )");
+  parameters.domain_parameters.name_of_grid       = "hyper_cube";
+  parameters.domain_parameters.arguments_for_grid = "-2: 2: false";
+  parameters.domain_parameters.initial_refinement = 0;
+  parameters.dirichlet_ids                        = {0};
+  problem.make_grid();
+  problem.setup_fe();
+  problem.setup_system();
+  problem.assemble_operators();
+  problem.set_initial_conditions();
+
+  TensorProductLift<1, 2, 3, 3> geometry("/Moving Dirichlet lift/");
+  geometry.thickness                     = "0.1";
+  geometry.section.selected_coefficients = {0};
+  FiniteElementSpace<1, 3> line_space(fixture.domain.triangulation(),
+                                      std::make_unique<FE_Q<1, 3>>(1));
+  using V = ImmersXLA::MPI::Vector;
+  using G = ImmersXLA::MPI::BlockVector;
+  IDAAdapter<V, G> adapter(parameters.time_parameters,
+                           parameters.ida_parameters,
+                           MPI_COMM_WORLD);
+  const auto       solid     = adapter.add(problem);
+  const auto       line_view = line_space.view();
+  const auto       line      = adapter.add([&](auto &builder) {
+    const auto id = builder.algebraic_field("trace",
+                                            line_space.locally_owned_dofs(),
+                                            line_space.locally_relevant_dofs());
+    return line_view.field(id, "trace");
+  });
+  const auto       lifted    = lift(value(line.fields()), geometry).mode(0);
+  adapter.add([&](auto &builder) {
+    weak_term(value(solid.fields().displacement), test(lifted))
+      .with_lifted_affine_updates()
+      .add(builder);
+    return line.fields();
+  });
+  auto state     = adapter.make_state();
+  auto state_dot = adapter.make_state();
+  auto residual  = adapter.make_state();
+  V    expected;
+  detail::initialize_weak_vector(expected,
+                                 line_space.locally_owned_dofs(),
+                                 MPI_COMM_WORLD);
+
+  // Every bulk DoF is prescribed. The trace must recover the physical value
+  // from the current boundary offsets, even with a zero execution vector.
+  for (const double time : {0.2, 0.4, 0.1})
+    {
+      adapter.solver().setup_jacobian(time, state, state_dot, 1.);
+      EXPECT_DOUBLE_EQ(parameters.displacement_boundary.get_time(), time);
+      EXPECT_DOUBLE_EQ(parameters.velocity_boundary.get_time(), time);
+      for (const auto index : problem.locally_owned_dofs())
+        EXPECT_TRUE(problem.constraints().is_constrained(index));
+      adapter.solver().residual(time, state, state_dot, residual);
+      EXPECT_DOUBLE_EQ(problem.displacement().l2_norm(), 0.);
+      EXPECT_DOUBLE_EQ(problem.velocity().l2_norm(), 0.);
+      expected = 0.;
+      Tensor<1, 3> exact;
+      exact[0] = time * time * time;
+      exact[1] = -2. * time * time * time;
+      exact[2] = 3. * time * time * time;
+      for (const auto &point : lifted.lifted_points())
+        {
+          dealii::Vector<double> local(point.dof_indices.size());
+          for (unsigned int i = 0; i < local.size(); ++i)
+            local[i] = point.weight * point.source_basis_values[i] *
+                       (exact * point.mode_vector);
+          line.fields().constraints().distribute_local_to_global(
+            local, point.dof_indices, expected);
+        }
+      expected.compress(VectorOperation::add);
+      EXPECT_GT(expected.l2_norm(), 1.e-6);
+      V error;
+      error.reinit(expected);
+      error = adapter.field(residual, line.fields());
+      error -= expected;
+      EXPECT_LT(error.l2_norm(), 1.e-12);
+    }
+}
+#endif

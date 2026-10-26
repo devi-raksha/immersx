@@ -175,6 +175,7 @@ namespace
                radius);
 
         weak_term(value(solid_fields.fields().displacement), test(lambda_wall))
+          .with_lifted_affine_updates()
           .add(builder);
         weak_term(negative_wall_displacement, test(multiplier)).add(builder);
         weak_term(lambda_wall, test(solid_fields.fields().velocity))

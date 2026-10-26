@@ -141,6 +141,8 @@ skeleton in `.github/CHANGELOG_TEMPLATE.md`.
 
 ### Fixed
 
+- [PR #N](https://github.com/luca-heltai/immersx/pull/N) Support time-dependent Dirichlet data in the MetricFlowX elastodynamics coupling and use exact displacement and velocity boundary data in the cube MMS tutorials.
+
 - [PR #276](https://github.com/luca-heltai/immersx/pull/276) Apply 1D Poisson Dirichlet data only to non-artificial cells with deal.II 9.7, preserving the pressure solution across MPI partitions.
 - [PR #276](https://github.com/luca-heltai/immersx/pull/276) Keep the Coral Poisson–elasticity workflow compatible with the simplified application interfaces and report traction balance from its displacement residual.
 - [PR #275](https://github.com/luca-heltai/immersx/pull/275) Handle exact Krylov breakdown in the default IDA GMRES path with modified Gram-Schmidt, including deal.II 9.7 builds.

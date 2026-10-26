@@ -237,32 +237,18 @@ $$
 This is the scalar pressure-jump multiplier. Its negative sign balances the
 outward displacement under the positive solid-reaction convention.
 
-All cube faces have boundary id zero. Prescribe the exact outer traction
-$\tau^\star=\sigma(u^\star)n_\Omega$ on every face, including the vessel end
-planes. Both initial fields are zero.
-The initial acceleration and multiplier are also zero, matching the
-application's initialization. The parameter expression uses
-$R_0^2/\max(y^2+z^2,R_0^2)$ to encode both branches without division by zero.
+All cube faces have boundary id zero. Prescribe the exact displacement
+$u^\star=t^3w$ and velocity $v^\star=3t^2w$ on every face, including the
+vessel end planes. Both initial fields are zero. The initial acceleration and
+multiplier are also zero, matching the application's initialization. The
+parameter expressions use $R_0^2/\max(y^2+z^2,R_0^2)$ to encode both branches
+without division by zero.
 
-For $r<R_0$, the stress matrix is
-$t^3\operatorname{diag}(2,4,4)$. For $r>R_0$, its nonzero components are
-
-$$
-\sigma_{yy}=\frac{2t^3R_0^2(z^2-y^2)}{r^4},\qquad
-\sigma_{zz}=-\sigma_{yy},\qquad
-\sigma_{yz}=\sigma_{zy}=-\frac{4t^3R_0^2yz}{r^4}.
-$$
-
-The boundary expression multiplies this matrix by the appropriate cube-face
-normal. It uses a coordinate tolerance of $10^{-10}$ to identify faces and
-regularizes denominators in branches where the numerator is zero. No
-Dirichlet ids are selected. The transient mass operator and zero initial
-displacement/velocity fix the rigid-body motion of this traction problem.
-
-This boundary choice also keeps the lift's affine constraints fixed. A trial
-with time-dependent exact Dirichlet data stops with `Lifted affine constraints
-changed after static assembly; rebuild the weak term.` The supplied inputs
-use exact traction to avoid that separate limitation.
+The elastodynamics contributor updates boundary values before evaluating any
+residual or Jacobian term. The lifted displacement pairing uses
+`with_lifted_affine_updates()` to refresh the contribution of prescribed
+values at each candidate time while retaining the coupling matrix. Constraint
+indices and master entries must remain fixed during the solve.
 
 ## Area and volume supplied by the inlet
 
@@ -419,6 +405,10 @@ solid mesh, cross-section geometry, and time error must also be considered
 when interpreting differences between the two meshes.
 
 ## Local verification results
+
+The measurements and plots below used exact Neumann traction on all cube
+faces. They predate the time-dependent Dirichlet inputs above and do not
+measure those inputs.
 
 Runs on 2026-10-22 used deal.II 9.8.0-rc1, MPICH 5.0.1, and an installed
 MetricFlowX package reporting version 0.1.0 with both build variants. The
