@@ -387,8 +387,8 @@ Elimination and recovery use the same corrected primal inverse.
 Outputs are below the build-tree `test_output/` directory, in separate
 `metric-flow-x-mms-cube-resolved`, `metric-flow-x-mms-cube-refined-resolved`,
 and `metric-flow-x-mms-cube-mpi-resolved` directories. Each contains
-`solid.pvd` and `flow.pvd` in the same directory, with a multiplier series
-in `interaction/pressure_jump.pvd`. Flow output contains
+`solid.pvd`, `flow.pvd`, and the multiplier series `pressure_jump.pvd`
+in the same directory. Flow output contains
 `area`, `velocity`, `A_hat`, `U_hat`, and `pressure`. CTest adds a
 configuration and case prefix, such as `Release/metric-MMS-Serial/`, before
 these output directories.

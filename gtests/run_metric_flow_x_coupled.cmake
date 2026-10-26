@@ -15,7 +15,7 @@ if(NOT _stdout MATCHES "accepted IDA steps: [1-9][0-9]*")
   message(FATAL_ERROR "MetricFlowX coupled application did not advance in time")
 endif()
 
-foreach(_collection flow.pvd solid.pvd interaction/pressure_jump.pvd)
+foreach(_collection flow.pvd solid.pvd pressure_jump.pvd)
   set(_pvd "${OUTPUT_DIRECTORY}/${_collection}")
   file(STRINGS "${_pvd}" _records REGEX "<DataSet ")
   list(LENGTH _records _count)

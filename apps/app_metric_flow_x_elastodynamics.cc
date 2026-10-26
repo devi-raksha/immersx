@@ -237,8 +237,6 @@ namespace
     const auto flow_output_directory =
       metric_flow_parameter("Output directory");
     const auto flow_output_name = metric_flow_parameter("Output filename");
-    const std::filesystem::path multiplier_output_directory =
-      flow_output_directory + "/interaction";
     std::vector<std::pair<double, std::string>> multiplier_output_records;
     std::vector<std::pair<double, std::string>> flow_output_records;
     const auto                                  output = [&solid_problem,
@@ -246,7 +244,6 @@ namespace
                          &flow_problem,
                          &adapter,
                          &lambda_view,
-                         &multiplier_output_directory,
                          &multiplier_output_records,
                          &flow_output_records,
                          coupling_fields,
@@ -289,16 +286,16 @@ namespace
         DataOut<1, 3>::type_dof_data);
       multiplier_output.build_patches(lambda_view.mapping());
       const auto rank = Utilities::MPI::this_mpi_process(MPI_COMM_WORLD);
-      if (rank == 0)
-        std::filesystem::create_directories(multiplier_output_directory);
       MPI_Barrier(MPI_COMM_WORLD);
       const auto filename = "pressure_jump_" + std::to_string(step) + ".vtu";
       multiplier_output.write_vtu_in_parallel(
-        (multiplier_output_directory / filename).string(), MPI_COMM_WORLD);
+        (std::filesystem::path(flow_output_directory) / filename).string(),
+        MPI_COMM_WORLD);
       multiplier_output_records.emplace_back(time, filename);
       if (rank == 0)
         {
-          std::ofstream pvd(multiplier_output_directory / "pressure_jump.pvd");
+          std::ofstream pvd(std::filesystem::path(flow_output_directory) /
+                            "pressure_jump.pvd");
           DataOutBase::write_pvd_record(pvd, multiplier_output_records);
         }
       MPI_Barrier(MPI_COMM_WORLD);
