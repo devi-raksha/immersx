@@ -381,6 +381,19 @@ if(IMMERSX_WITH_METRIC_FLOW_X)
               "ImmersX${${_build_type}_ctest_suffix}.application.MetricFlowX${_case}.${_mode}")
           set(_saved_output_dir "${TEST_OUTPUT_DIR}")
           set(TEST_OUTPUT_DIR "${_saved_output_dir}/${_build_type}/metric-${_case}-${_mode}")
+          if(_case STREQUAL "Coupled")
+            set(_coupled_output_directory "${TEST_OUTPUT_DIR}/metric-flow-x-elastodynamics")
+            set(_coupled_output_name "two_way")
+            set(_coupled_output_times "0;0.01;0.02")
+          elseif(_case STREQUAL "MMS")
+            set(_coupled_output_directory "${TEST_OUTPUT_DIR}/metric-flow-x-mms-cube-resolved")
+            set(_coupled_output_name "stress_jump")
+            set(_coupled_output_times "0;0.05;0.1")
+          elseif(_case STREQUAL "MMSNeumann")
+            set(_coupled_output_directory "${TEST_OUTPUT_DIR}/metric-flow-x-mms-cube-neumann")
+            set(_coupled_output_name "stress_jump")
+            set(_coupled_output_times "0;0.05;0.1")
+          endif()
           set(_coupled_input "${CMAKE_CURRENT_BINARY_DIR}/parameters/metric_${_case}_${_build_type}_${_mode}.prm")
           if(_case STREQUAL "MMS")
             set(_coupled_template "${CMAKE_SOURCE_DIR}/tutorials/metric_flow_x_elastodynamics/mms_cube.prm.in")
@@ -410,6 +423,9 @@ if(IMMERSX_WITH_METRIC_FLOW_X)
             COMMAND "${CMAKE_COMMAND}"
               "-DTEST_EXECUTABLE=$<TARGET_FILE:metric_flow_x_elastodynamics${${_build_type}_postfix}>"
               "-DPARAMETER_FILE=${_coupled_input}"
+              "-DOUTPUT_DIRECTORY=${_coupled_output_directory}"
+              "-DOUTPUT_NAME=${_coupled_output_name}"
+              "-DEXPECTED_TIMES=${_coupled_output_times}"
               "-DMPIEXEC=${_coupled_mpiexec}"
               -P "${CMAKE_CURRENT_SOURCE_DIR}/run_metric_flow_x_coupled.cmake")
           set_tests_properties("${_coupled_name}" PROPERTIES

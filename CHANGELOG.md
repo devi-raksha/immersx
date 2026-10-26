@@ -141,6 +141,8 @@ skeleton in `.github/CHANGELOG_TEMPLATE.md`.
 
 ### Fixed
 
+- [PR #N](https://github.com/luca-heltai/immersx/pull/N) Save coupled MetricFlowX fluid output with the accepted simulation times and write the initial state once in each output series. Check fluid, solid, and multiplier output times in the coupled and MMS application tests.
+
 - [PR #287](https://github.com/luca-heltai/immersx/pull/287) Support time-dependent Dirichlet data in the MetricFlowX elastodynamics coupling and use exact displacement and velocity boundary data in the cube MMS tutorials while retaining exact Neumann variants on both meshes.
 
 - [PR #276](https://github.com/luca-heltai/immersx/pull/276) Apply 1D Poisson Dirichlet data only to non-artificial cells with deal.II 9.7, preserving the pressure solution across MPI partitions.

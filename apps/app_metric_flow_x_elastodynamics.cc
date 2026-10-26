@@ -236,9 +236,11 @@ namespace
 
     const auto flow_output_directory =
       metric_flow_parameter("Output directory");
+    const auto flow_output_name = metric_flow_parameter("Output filename");
     const std::filesystem::path multiplier_output_directory =
       flow_output_directory + "/interaction";
     std::vector<std::pair<double, std::string>> multiplier_output_records;
+    std::vector<std::pair<double, std::string>> flow_output_records;
     const auto                                  output = [&solid_problem,
                          &solid_parameters,
                          &flow_problem,
@@ -246,8 +248,10 @@ namespace
                          &lambda_view,
                          &multiplier_output_directory,
                          &multiplier_output_records,
+                         &flow_output_records,
                          coupling_fields,
                          flow_fields,
+                         flow_output_name,
                          flow_output_directory](const GlobalVector &solution,
                                                 const unsigned int  step,
                                                 const double        time) {
@@ -264,6 +268,18 @@ namespace
           -1. * value(coupling_fields.fields().multiplier),
           adapter.field(solution, coupling_fields.fields().multiplier)));
       flow_problem.output_results(flow_state, pressure, step);
+      // MetricFlowX's native writer uses its runner's private clock. The
+      // coupled adapter supplies the accepted times for this collection.
+      if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+        {
+          flow_output_records.emplace_back(time,
+                                           flow_output_name + "_" +
+                                             Utilities::int_to_string(step, 5) +
+                                             ".pvtu");
+          std::ofstream pvd(std::filesystem::path(flow_output_directory) /
+                            (flow_output_name + ".pvd"));
+          DataOutBase::write_pvd_record(pvd, flow_output_records);
+        }
       solid_problem.output_results();
       DataOut<1, 3> multiplier_output;
       multiplier_output.attach_dof_handler(lambda_view.dof_handler());
@@ -302,7 +318,6 @@ namespace
       (void)solution_dot;
     });
 
-    output(state, 0, flow_time.initial_time);
     const auto accepted_steps = adapter.solve(state, state_dot);
     if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
       std::cout << "MetricFlowX elastodynamics accepted IDA steps: "
