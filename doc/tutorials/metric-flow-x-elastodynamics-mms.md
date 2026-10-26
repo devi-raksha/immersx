@@ -386,8 +386,9 @@ Elimination and recovery use the same corrected primal inverse.
 
 Outputs are below the build-tree `test_output/` directory, in separate
 `metric-flow-x-mms-cube-resolved`, `metric-flow-x-mms-cube-refined-resolved`,
-and `metric-flow-x-mms-cube-mpi-resolved` directories. Each contains solid
-output and a `flow/interaction/pressure_jump.pvd` multiplier series. Flow output contains
+and `metric-flow-x-mms-cube-mpi-resolved` directories. Each contains
+`solid.pvd` and `flow.pvd` in the same directory, with a multiplier series
+in `interaction/pressure_jump.pvd`. Flow output contains
 `area`, `velocity`, `A_hat`, `U_hat`, and `pressure`. CTest adds a
 configuration and case prefix, such as `Release/metric-MMS-Serial/`, before
 these output directories.
@@ -408,13 +409,8 @@ with $t^3r$ inside and $t^3R_0^2/r$ outside. Compare the centerline area with
 $A_0(1+t^3)^2$, axial velocity with $(\ell-x)6t^2/(1+t^3)$, and
 `pressure_jump` with $-6t^3$. Use the accepted physical time, not a file index.
 
-The current application leaves the native flow clock at its initial value
-when it calls the flow writer. Consequently every timestamp in
-`flow/stress_jump.pvd` is zero. Match flow file indices to the accepted times
-in `flow/interaction/pressure_jump.pvd` or the solid series. Do not use the
-flow PVD timestamps to evaluate the analytical functions. The application
-writes the initial state twice; duplicate step-zero entries are not two time
-steps.
+All three output series use the accepted simulation times and contain the
+initial state once.
 
 Check the integrated volume balance independently:
 

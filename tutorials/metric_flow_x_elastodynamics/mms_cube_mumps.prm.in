@@ -5,9 +5,9 @@ subsection MetricFlowX coupled solver
 end
 
 subsection Elastodynamics
-  set Output directory = @TEST_OUTPUT_DIR@/metric-flow-x-mms-cube-mumps/solid
+  set Output directory = @TEST_OUTPUT_DIR@/metric-flow-x-mms-cube-mumps
 end
 
 subsection MetricFlowSystem<1, 3>
-  set Output directory = @TEST_OUTPUT_DIR@/metric-flow-x-mms-cube-mumps/flow
+  set Output directory = @TEST_OUTPUT_DIR@/metric-flow-x-mms-cube-mumps
 end
