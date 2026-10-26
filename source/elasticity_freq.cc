@@ -1232,6 +1232,44 @@ namespace ImmersX
 
   template <int dim, int spacedim>
   void
+  ElasticityFreqProblem<dim, spacedim>::prepare_frequency(
+    const double frequency_hz)
+  {
+    AssertThrow(dh.n_dofs() > 0,
+                ExcMessage("Prepare the harmonic FE space first."));
+    AssertThrow(std::isfinite(frequency_hz) && frequency_hz >= 0.,
+                ExcMessage("The frequency must be finite and nonnegative."));
+    current_frequency = frequency_hz;
+    par.set_rhs_times(0.);
+    setup_constraints();
+    frequency_prepared = true;
+  }
+
+  template <int dim, int spacedim>
+  void
+  ElasticityFreqProblem<dim, spacedim>::accept_frequency_solution(
+    const VectorType &real,
+    const VectorType &imaginary)
+  {
+    AssertThrow(frequency_prepared, ExcNotInitialized());
+    AssertDimension(real.size(), dh.n_dofs());
+    AssertDimension(imaginary.size(), dh.n_dofs());
+    real_displacement_storage      = real;
+    imaginary_displacement_storage = imaginary;
+    constraints.distribute(real_displacement_storage);
+    imaginary_constraints.distribute(imaginary_displacement_storage);
+  }
+
+  template <int dim, int spacedim>
+  void
+  ElasticityFreqProblem<dim, spacedim>::output_results(const unsigned int index)
+  {
+    frequency_index = index;
+    output_frequency(real_displacement_storage, imaginary_displacement_storage);
+  }
+
+  template <int dim, int spacedim>
+  void
   ElasticityFreqProblem<dim, spacedim>::run()
   {
     print_parameters();
@@ -1299,6 +1337,7 @@ namespace ImmersX
              ++frequency_index)
           {
             current_frequency  = par.frequencies[frequency_index];
+            frequency_prepared = true;
             const double omega = 2 * std::acos(-1.0) * current_frequency;
             LA::MPI::SparseMatrix H;
             H.reinit(own, own, dsp, mpi_communicator);

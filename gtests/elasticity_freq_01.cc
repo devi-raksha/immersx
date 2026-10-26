@@ -3,11 +3,15 @@
 // This file is part of ImmersX, based on the deal.II library.
 // ---------------------------------------------------------------------
 #include <gtest/gtest.h>
+#include <immersx/core/linear_adapter.h>
 #include <immersx/io/utils.h>
 #include <immersx/physics/elasticity_freq.h>
+#include <immersx/physics/elasticity_freq_contributor.h>
 
 #include <cmath>
 #include <complex>
+#include <iomanip>
+#include <sstream>
 
 #include "test_paths.h"
 
@@ -115,4 +119,105 @@ TEST(ElasticityFreq, BOTH_DampedRigidTranslation)
   check_translation<2, 2>();
   check_translation<2, 3>();
   check_translation<3, 3>();
+}
+
+namespace
+{
+  template <int dim, int spacedim>
+  void
+  check_adapter_affine_displacement()
+  {
+    using namespace ImmersX;
+    using namespace dealii;
+    ParameterAcceptor::clear();
+    ElasticityFreqProblemParameters<dim, spacedim> parameters;
+    parameters.initial_refinement = 2;
+    // A generated interval retains endpoint ids 0 and 1 even without
+    // colorization.
+    parameters.dirichlet_ids.clear();
+    for (unsigned int id = 0; id < 2 * dim; ++id)
+      parameters.dirichlet_ids.insert(id);
+    parameters.output_directory =
+      TestPaths::output_directory("harmonic-adapter-affine");
+    parameters.default_material_properties.rho            = 2.;
+    parameters.default_material_properties.rayleigh_alpha = 0.4;
+    parameters.default_material_properties.rayleigh_beta  = 0.05;
+    parameters.default_material_properties.neta           = 0.3;
+    const double               frequency                  = 0.25;
+    const double               omega = 2. * std::acos(-1.) * frequency;
+    const double               phase = std::acos(-1.) / 6.;
+    const std::complex<double> dynamic_coefficient(-2. * omega * omega,
+                                                   0.8 * omega);
+    const auto                 displacement_factor = std::polar(1., phase);
+    parameters.dirichlet_phase                     = 30.;
+    parameters.rhs_phase =
+      (std::arg(dynamic_coefficient) + phase) * 180. / std::acos(-1.);
+    std::ostringstream force, boundary;
+    force << std::setprecision(17);
+    for (unsigned int d = 0; d < spacedim; ++d)
+      {
+        if (d)
+          {
+            force << "; ";
+            boundary << "; ";
+          }
+        force << std::abs(dynamic_coefficient) * (d + 1) << "*(2+x)";
+        boundary << d + 1 << "*(2+x)";
+      }
+    initialize_parameters_from_string(
+      "subsection Functions\n subsection Right hand side\n set Function expression = " +
+      force.str() +
+      "\n end\n subsection Dirichlet boundary conditions\n set Function expression = " +
+      boundary.str() + "\n end\nend\n");
+    ElasticityFreqProblem<dim, spacedim> problem(parameters);
+    problem.make_grid();
+    problem.setup_fe();
+    problem.setup_dofs();
+    problem.prepare_frequency(frequency);
+    LinearAdapterParameters solver_parameters;
+    solver_parameters.solver = LinearSolver::direct;
+    LinearAdapter<ImmersXLA::MPI::Vector, ImmersXLA::MPI::BlockVector> adapter(
+      solver_parameters, problem.communicator());
+    const auto fields = adapter.add(problem, "solid").fields();
+    auto       state  = adapter.make_state();
+    adapter.solve(state);
+    auto residual = adapter.make_state();
+    adapter.evaluate_residual(state, residual);
+    EXPECT_LT(residual.l2_norm(), 1.e-9);
+    problem.accept_frequency_solution(adapter.field(state, fields.real),
+                                      adapter.field(state, fields.imaginary));
+    const auto                          &fe = problem.dof_handler().get_fe();
+    std::vector<types::global_dof_index> indices(fe.n_dofs_per_cell());
+    for (const auto &cell : problem.dof_handler().active_cell_iterators())
+      if (cell->is_locally_owned())
+        {
+          cell->get_dof_indices(indices);
+          for (unsigned int i = 0; i < indices.size(); ++i)
+            if (problem.locally_owned_dofs().is_element(indices[i]))
+              {
+                const auto point =
+                  problem.mapping().transform_unit_to_real_cell(
+                    cell, fe.get_unit_support_points()[i]);
+                const auto component = fe.system_to_component_index(i).first;
+                const auto expected =
+                  displacement_factor * (component + 1.) * (2. + point[0]);
+                EXPECT_NEAR(problem.real_displacement()[indices[i]],
+                            expected.real(),
+                            1.e-9);
+                EXPECT_NEAR(problem.imaginary_displacement()[indices[i]],
+                            expected.imag(),
+                            1.e-9);
+              }
+        }
+  }
+} // namespace
+
+TEST(ElasticityFreq, BOTH_AdapterAffineDisplacement)
+{
+  check_adapter_affine_displacement<1, 1>();
+  check_adapter_affine_displacement<1, 2>();
+  check_adapter_affine_displacement<1, 3>();
+  check_adapter_affine_displacement<2, 2>();
+  check_adapter_affine_displacement<2, 3>();
+  check_adapter_affine_displacement<3, 3>();
 }

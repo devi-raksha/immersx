@@ -45,6 +45,7 @@
 #include <deal.II/fe/fe_values.h>
 #include <deal.II/fe/mapping_fe_field.h>
 #include <deal.II/fe/mapping_q.h>
+#include <deal.II/fe/mapping_q1.h>
 
 #include <deal.II/grid/grid_generator.h>
 #include <deal.II/grid/grid_in.h>
@@ -170,6 +171,41 @@ namespace ImmersX
     void
     compute_internal_and_boundary_stress(bool openfilefirsttime) const;
 
+    /** Set the frequency in Hz before registering this algebraic Problem. */
+    void
+    prepare_frequency(double frequency_hz);
+    /** Accept an external harmonic solve and reconstruct essential values. */
+    void
+    accept_frequency_solution(const VectorType &real,
+                              const VectorType &imaginary);
+    /** Write the accepted complex displacement using a sweep output index. */
+    void
+    output_results(unsigned int index = 0);
+    const ElasticityFreqProblemParameters<dim, spacedim> &
+    parameters() const
+    {
+      return par;
+    }
+    const Mapping<dim, spacedim> &
+    mapping() const
+    {
+      return StaticMappingQ1<dim, spacedim>::mapping;
+    }
+    MPI_Comm
+    communicator() const
+    {
+      return mpi_communicator;
+    }
+    double
+    frequency() const
+    {
+      AssertThrow(
+        frequency_prepared,
+        ExcMessage(
+          "Call prepare_frequency before registering the harmonic Problem."));
+      return current_frequency;
+    }
+
     /** Owned coefficients of the most recently solved complex displacement. */
     const VectorType &
     real_displacement() const
@@ -238,8 +274,9 @@ namespace ImmersX
     VectorType   real_displacement_storage, imaginary_displacement_storage;
     unsigned int cycle = 0, frequency_index = 0;
     FEValuesExtractors::Vector displacement;
-    double                     current_frequency = 0.0;
-    std::string                stress_part       = "real";
+    double                     current_frequency  = 0.0;
+    bool                       frequency_prepared = false;
+    std::string                stress_part        = "real";
   };
 } // namespace ImmersX
 #endif
