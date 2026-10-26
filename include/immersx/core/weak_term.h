@@ -4953,6 +4953,52 @@ namespace ImmersX
                     Assembly::template dynamic_matrix_operator<VectorType,
                                                                MatrixType>(
                       prepared);
+                  // Condensed nonmatching matrices omit essential columns.
+                  // Keep their action on the affine offset using the same
+                  // backend with unconstrained source columns.
+                  if constexpr (std::is_constructible_v<TrialExpression,
+                                                        trial_field_type>)
+                    {
+                      const auto source      = observable_.source();
+                      const auto constrained = dealii::Utilities::MPI::max(
+                        source.constraints().n_constraints() != 0 ? 1u : 0u,
+                        source.space().mpi_communicator());
+                      if (!source.is_reindexed() && constrained != 0)
+                        {
+                          auto empty = std::make_shared<
+                            dealii::AffineConstraints<double>>();
+                          empty->reinit(source.locally_owned_dofs(),
+                                        source.locally_relevant_dofs());
+                          empty->close();
+                          const auto unconstrained =
+                            TrialExpression(source.with_constraints(empty))
+                              .scaled(observable_.scale());
+                          const auto affine_prepared =
+                            Assembly::template prepare<VectorType, MatrixType>(
+                              unconstrained, target);
+                          const auto affine_operator =
+                            Assembly::template dynamic_matrix_operator<
+                              VectorType,
+                              MatrixType>(affine_prepared);
+                          result.affine_rhs_factory = [source,
+                                                       affine_operator] {
+                            VectorType offset;
+                            affine_operator.view.reinit_domain_vector(offset,
+                                                                      false);
+                            offset = 0.;
+                            for (const auto i : source.locally_owned_dofs())
+                              offset[i] +=
+                                source.constraints().get_inhomogeneity(i);
+                            detail::compress_weak_vector(offset);
+                            auto rhs = std::make_shared<VectorType>();
+                            affine_operator.view.reinit_range_vector(*rhs,
+                                                                     false);
+                            affine_operator.view.vmult(*rhs, offset);
+                            *rhs *= -1.;
+                            return rhs;
+                          };
+                        }
+                    }
                 }
               else
                 {

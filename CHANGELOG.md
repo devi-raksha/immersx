@@ -11,6 +11,8 @@ skeleton in `.github/CHANGELOG_TEMPLATE.md`.
 
 ### Added
 
+- [PR #N](https://github.com/luca-heltai/immersx/pull/N) Select harmonic reinforcement dimensions and displacement formulation from parameters: reduced meshes use a normal volume lift, full-dimensional meshes need no lift, and either independent displacements with continuity multipliers or one shared displacement can be solved.
+
 - [PR #N](https://github.com/luca-heltai/immersx/pull/N) Integrate known volume sources and linear weak terms on independent physical volume supports, retaining nonzero essential offsets.
 
 - [PR #N](https://github.com/luca-heltai/immersx/pull/N) Lift scalar representative fields and geometric integration supports to volumes in codimension one and two, using the complete surface tangent space for normal sheet extrusion.
@@ -152,6 +154,8 @@ skeleton in `.github/CHANGELOG_TEMPLATE.md`.
 - [PR #73](https://github.com/luca-heltai/immersx/pull/73) Improved distributed tensor-product coupling.
 
 ### Fixed
+
+- [PR #N](https://github.com/luca-heltai/immersx/pull/N) Retain essential source offsets in unreindexed nonmatching weak terms, including harmonic continuity between independently meshed full-dimensional materials.
 
 - [PR #N](https://github.com/luca-heltai/immersx/pull/N) Write harmonic displacement datasets inside the selected output directory even when its path has no trailing separator.
 

@@ -12,13 +12,13 @@
 
 namespace
 {
-  template <int dim>
+  template <int dim, int spacedim>
   void
   run(const std::string &filename)
   {
-    ImmersX::FiberReinforcedElasticityFreqParameters<dim> parameters;
+    ImmersX::FiberReinforcedElasticityFreqParameters<dim, spacedim> parameters;
     ImmersX::initialize_parameters(filename);
-    ImmersX::FiberReinforcedElasticityFreq<dim> driver(parameters);
+    ImmersX::FiberReinforcedElasticityFreq<dim, spacedim> driver(parameters);
     driver.run();
   }
 } // namespace
@@ -33,10 +33,18 @@ main(int argc, char *argv[])
                                                                   1);
       const std::string filename = argc > 1 ? argv[1] : "parameters.prm";
       const auto dimensions      = ImmersX::get_dimension_parameters(filename);
-      if (dimensions.dimension == 2 && dimensions.space_dimension == 2)
-        run<2>(filename);
+      if (dimensions.dimension == 1 && dimensions.space_dimension == 1)
+        run<1, 1>(filename);
+      else if (dimensions.dimension == 1 && dimensions.space_dimension == 2)
+        run<1, 2>(filename);
+      else if (dimensions.dimension == 1 && dimensions.space_dimension == 3)
+        run<1, 3>(filename);
+      else if (dimensions.dimension == 2 && dimensions.space_dimension == 2)
+        run<2, 2>(filename);
+      else if (dimensions.dimension == 2 && dimensions.space_dimension == 3)
+        run<2, 3>(filename);
       else if (dimensions.dimension == 3 && dimensions.space_dimension == 3)
-        run<3>(filename);
+        run<3, 3>(filename);
       else
         ImmersX::throw_unsupported_dimension_combination(dimensions);
     }

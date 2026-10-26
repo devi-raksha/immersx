@@ -49,9 +49,10 @@ namespace
   check_dynamic_translation()
   {
     ParameterAcceptor::clear();
-    FiberReinforcedElasticityFreqParameters<dim> parameters;
+    FiberReinforcedElasticityFreqParameters<1, dim> parameters;
     parameters.output_directory = TestPaths::output_directory(
       "harmonic-fiber-translation-" + std::to_string(dim));
+    parameters.geometry->thickness                  = "0.5";
     parameters.matrix_parameters.initial_refinement = 0;
     parameters.fiber_parameters.initial_refinement  = 1;
     parameters.matrix_parameters.dirichlet_ids.clear();
@@ -76,7 +77,7 @@ namespace
       force +
       "\n end\n end\n end\n subsection Fiber\n subsection Functions\n subsection Right hand side\n set Function expression = " +
       zero + "\n end\n end\n end\nend\n");
-    FiberReinforcedElasticityFreq<dim> driver(parameters);
+    FiberReinforcedElasticityFreq<1, dim> driver(parameters);
     driver.setup();
     const double volume = std::pow(2., dim);
     for (const double frequency : {0.25, 0.4})
@@ -107,17 +108,18 @@ namespace
   check_static_reinforcement()
   {
     ParameterAcceptor::clear();
-    FiberReinforcedElasticityFreqParameters<dim> parameters;
+    FiberReinforcedElasticityFreqParameters<1, dim> parameters;
     parameters.output_directory = TestPaths::output_directory(
       "harmonic-fiber-static-" + std::to_string(dim));
-    auto &matrix              = parameters.matrix_parameters;
-    auto &fiber               = parameters.fiber_parameters;
-    matrix.initial_refinement = 0;
-    fiber.initial_refinement  = 1;
-    matrix.arguments_for_grid = "-1: 1: true";
-    fiber.arguments_for_grid  = "-1: 1: true";
-    matrix.dirichlet_ids      = {0};
-    matrix.neumann_ids        = {1};
+    parameters.geometry->thickness = "0.5";
+    auto &matrix                   = parameters.matrix_parameters;
+    auto &fiber                    = parameters.fiber_parameters;
+    matrix.initial_refinement      = 0;
+    fiber.initial_refinement       = 1;
+    matrix.arguments_for_grid      = "-1: 1: true";
+    fiber.arguments_for_grid       = "-1: 1: true";
+    matrix.dirichlet_ids           = {0};
+    matrix.neumann_ids             = {1};
     fiber.dirichlet_ids.clear();
     matrix.default_material_properties.Lame_mu     = 2.;
     matrix.default_material_properties.Lame_lambda = 0.;
@@ -130,7 +132,7 @@ namespace
       "subsection Fiber Reinforced Elasticity Frequency\n"
       " subsection Matrix\n subsection Functions\n subsection Neumann boundary conditions\n set Function expression = " +
       traction + "\n end\n end\n end\nend\n");
-    FiberReinforcedElasticityFreq<dim> driver(parameters);
+    FiberReinforcedElasticityFreq<1, dim> driver(parameters);
     driver.setup();
     driver.solve_frequency(0.);
     // The matrix and fiber are parallel axial elements of length two.
@@ -225,7 +227,7 @@ TEST(FiberReinforcedElasticityFreq, BOTH_CollectiveMetadataFailure)
 {
   using namespace ImmersX;
   dealii::ParameterAcceptor::clear();
-  FiberReinforcedElasticityFreqParameters<2> parameters;
+  FiberReinforcedElasticityFreqParameters<1, 2> parameters;
   parameters.output_directory =
     TestPaths::output_directory("harmonic-fiber-metadata-error");
   parameters.matrix_parameters.initial_refinement = 0;
@@ -233,14 +235,14 @@ TEST(FiberReinforcedElasticityFreq, BOTH_CollectiveMetadataFailure)
   initialize_parameters();
   std::filesystem::create_directories(parameters.output_directory +
                                       "/frequencies.csv");
-  FiberReinforcedElasticityFreq<2> driver(parameters);
+  FiberReinforcedElasticityFreq<1, 2> driver(parameters);
   EXPECT_THROW(driver.run(), dealii::ExceptionBase);
 }
 
 TEST(FiberReinforcedElasticityFreq, BOTH_CommonFrequencyParameters)
 {
   dealii::ParameterAcceptor::clear();
-  ImmersX::FiberReinforcedElasticityFreqParameters<2> parameters;
+  ImmersX::FiberReinforcedElasticityFreqParameters<1, 2> parameters;
   parameters.output_directory =
     ImmersX::TestPaths::output_directory("harmonic-shared-frequencies");
   ImmersX::initialize_parameters_from_string(
@@ -256,4 +258,139 @@ TEST(FiberReinforcedElasticityFreq, BOTH_CommonFrequencyParameters)
   const auto first = text.find("set Frequencies");
   ASSERT_NE(first, std::string::npos);
   EXPECT_EQ(text.find("set Frequencies", first + 1), std::string::npos);
+}
+
+namespace
+{
+  template <int dim, int spacedim>
+  void
+  check_reinforcement_modes(const std::string &formulation)
+  {
+    ParameterAcceptor::clear();
+    FiberReinforcedElasticityFreqParameters<dim, spacedim> parameters;
+    parameters.formulation      = formulation;
+    parameters.output_directory = TestPaths::output_directory(
+      "harmonic-modes-" + std::to_string(dim) + "-" + std::to_string(spacedim) +
+      "-" + formulation);
+    auto &matrix                               = parameters.matrix_parameters;
+    auto &fiber                                = parameters.fiber_parameters;
+    matrix.initial_refinement                  = 0;
+    fiber.initial_refinement                   = 1;
+    matrix.arguments_for_grid                  = "-1: 1: true";
+    fiber.arguments_for_grid                   = "-1: 1: true";
+    matrix.dirichlet_ids                       = {0};
+    matrix.neumann_ids                         = {1};
+    matrix.default_material_properties.Lame_mu = 2.;
+    matrix.default_material_properties.Lame_lambda = 0.;
+    fiber.default_material_properties.Lame_mu      = 5.;
+    fiber.default_material_properties.Lame_lambda  = 0.;
+    if constexpr (dim < spacedim)
+      parameters.geometry->thickness = "1";
+    std::string traction = "1";
+    for (unsigned int d = 1; d < spacedim; ++d)
+      traction += "; 0";
+    std::string essential = "0.25";
+    for (unsigned int d = 1; d < spacedim; ++d)
+      essential += "; 0";
+    initialize_parameters_from_string(
+      "subsection Fiber Reinforced Elasticity Frequency\n subsection Matrix\n subsection Functions\n subsection Neumann boundary conditions\n set Function expression = " +
+      traction +
+      "\nend\nsubsection Dirichlet boundary conditions\nset Function expression = " +
+      essential +
+      "\nend\nend\nsubsection Frequency domain\nset Dirichlet phase = 20\nset Neumann phase = 20\nend\nend\nend\n");
+    FiberReinforcedElasticityFreq<dim, spacedim> driver(parameters);
+    driver.setup();
+    EXPECT_NEAR(driver.reinforcement_measure(), std::pow(2., spacedim), 1.e-10);
+    driver.solve_frequency(0.);
+    const auto expected = [](const auto &p, const unsigned int c) {
+      return c == 0 ?
+               std::polar(0.25 + (p[0] + 1.) / 14., std::acos(-1.) / 9.) :
+               std::complex<double>();
+    };
+    check_coefficients(driver.matrix_problem(), expected);
+    if (formulation == "independent")
+      check_coefficients(driver.fiber_problem(), expected);
+    EXPECT_LT(driver.residual_norm(), 1.e-8);
+    EXPECT_LT(driver.continuity_norm(), 1.e-9);
+  }
+
+  template <int dim, int spacedim>
+  void
+  check_shared_dynamic_response()
+  {
+    ParameterAcceptor::clear();
+    FiberReinforcedElasticityFreqParameters<dim, spacedim> parameters;
+    parameters.formulation      = "shared";
+    parameters.output_directory = TestPaths::output_directory(
+      "harmonic-shared-dynamic-" + std::to_string(dim) + "-" +
+      std::to_string(spacedim));
+    auto &matrix              = parameters.matrix_parameters;
+    auto &fiber               = parameters.fiber_parameters;
+    matrix.initial_refinement = 0;
+    fiber.initial_refinement  = 1;
+    matrix.dirichlet_ids.clear();
+    fiber.arguments_for_grid                          = "-0.75: 0.75: true";
+    matrix.default_material_properties.rho            = 2.;
+    matrix.default_material_properties.rayleigh_alpha = 0.4;
+    fiber.default_material_properties.rho             = 3.;
+    fiber.default_material_properties.rayleigh_alpha  = 0.7;
+    if constexpr (dim < spacedim)
+      parameters.geometry->thickness = "0.25";
+    std::string force = "1", extra = "2";
+    for (unsigned int d = 1; d < spacedim; ++d)
+      {
+        force += "; " + std::to_string(d + 1);
+        extra += "; " + std::to_string(2 * (d + 1));
+      }
+    initialize_parameters_from_string(
+      "subsection Fiber Reinforced Elasticity Frequency\nsubsection Matrix\nsubsection Functions\nsubsection Right hand side\nset Function expression = " +
+      force +
+      "\nend\nend\nend\nsubsection Fiber\nsubsection Functions\nsubsection Right hand side\nset Function expression = " +
+      extra +
+      "\nend\nend\nsubsection Frequency domain\nset Rhs phase = 30\nend\nend\nend\n");
+    FiberReinforcedElasticityFreq<dim, spacedim> driver(parameters);
+    driver.setup();
+    const double volume = std::pow(2., spacedim);
+    const double reinforcement =
+      std::pow(1.5, dim) * std::pow(0.5, spacedim - dim);
+    EXPECT_NEAR(driver.reinforcement_measure(), reinforcement, 1.e-10);
+    for (const double frequency : {0.25, 0.4})
+      {
+        driver.solve_frequency(frequency, frequency == 0.25 ? 0 : 1);
+        const double omega = 2. * std::acos(-1.) * frequency;
+        const auto   amplitude =
+          (volume + 2. * reinforcement * std::polar(1., std::acos(-1.) / 6.)) /
+          (volume * std::complex<double>(-2. * omega * omega, 0.8 * omega) +
+           reinforcement *
+             std::complex<double>(-3. * omega * omega, 2.1 * omega));
+        const auto expected = [amplitude](const auto &, const unsigned int c) {
+          return (c + 1.) * amplitude;
+        };
+        check_coefficients(driver.matrix_problem(), expected);
+        EXPECT_LT(driver.residual_norm(), 1.e-8);
+      }
+  }
+} // namespace
+
+TEST(FiberReinforcedElasticityFreq, BOTH_AllDimensionsAndFormulations)
+{
+  for (const std::string mode : {"independent", "shared"})
+    {
+      check_reinforcement_modes<1, 1>(mode);
+      check_reinforcement_modes<1, 2>(mode);
+      check_reinforcement_modes<1, 3>(mode);
+      check_reinforcement_modes<2, 2>(mode);
+      check_reinforcement_modes<2, 3>(mode);
+      check_reinforcement_modes<3, 3>(mode);
+    }
+}
+
+TEST(FiberReinforcedElasticityFreq, BOTH_SharedDynamicMassAndPhasedForcing)
+{
+  check_shared_dynamic_response<1, 1>();
+  check_shared_dynamic_response<1, 2>();
+  check_shared_dynamic_response<1, 3>();
+  check_shared_dynamic_response<2, 2>();
+  check_shared_dynamic_response<2, 3>();
+  check_shared_dynamic_response<3, 3>();
 }

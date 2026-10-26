@@ -46,6 +46,52 @@ namespace ImmersX
                            std::acos(-1.) / 180.;
       return imaginary ? std::sin(phase) : std::cos(phase);
     }
+    /** Add the same constitutive law on a native or independent support. */
+    template <typename Builder, typename Fields, typename Support>
+    void
+    add_material(Builder                  &builder,
+                 const Fields             &fields,
+                 const MaterialProperties &material,
+                 const Support            &support,
+                 const double              omega,
+                 const double              weight = 1.)
+    {
+      const auto &real      = fields.real;
+      const auto &imaginary = fields.imaginary;
+      const auto  elasticity =
+        [&](const auto &source, const auto &row, const double factor) {
+          (weak_term((factor * 2. * material.Lame_mu) *
+                       symmetric_gradient(source),
+                     symmetric_gradient(test(row))) *
+           support)
+            .add(builder);
+          (weak_term((factor * material.Lame_lambda) * divergence(source),
+                     divergence(test(row))) *
+           support)
+            .add(builder);
+        };
+      const auto inertia =
+        [&](const auto &source, const auto &row, const double factor) {
+          (weak_term((factor * material.rho) * value(source), test(row)) *
+           support)
+            .add(builder);
+        };
+      const auto damping =
+        [&](const auto &source, const auto &row, const double factor) {
+          elasticity(source, row, factor * material.rayleigh_beta);
+          inertia(source, row, factor * material.rayleigh_alpha);
+          (weak_term((factor * material.neta) * symmetric_gradient(source),
+                     symmetric_gradient(test(row))) *
+           support)
+            .add(builder);
+        };
+      elasticity(real, real, weight);
+      elasticity(imaginary, imaginary, weight);
+      inertia(real, real, -weight * omega * omega);
+      inertia(imaginary, imaginary, -weight * omega * omega);
+      damping(imaginary, real, -weight * omega);
+      damping(real, imaginary, weight * omega);
+    }
   } // namespace harmonic_detail
 
   /** Register (K-omega^2 M+i omega D)u=f with the exp(i omega t) convention.
@@ -56,9 +102,13 @@ namespace ImmersX
   template <typename Builder, int dim, int spacedim>
   ElasticityFreqFields<dim, spacedim>
   contribute(Builder                                    &builder,
-             const ElasticityFreqProblem<dim, spacedim> &problem)
+             const ElasticityFreqProblem<dim, spacedim> &problem,
+             const double                                volume_weight = 1.)
   {
     using namespace dealii;
+    AssertThrow(std::isfinite(volume_weight) && volume_weight > 0.,
+                ExcMessage(
+                  "The harmonic integration weight must be positive."));
     const auto &parameters = problem.parameters();
     AssertThrow(parameters.weak_dirichlet_ids.empty(),
                 ExcMessage(
@@ -106,43 +156,18 @@ namespace ImmersX
         const auto &material = parameters.get_material_properties(id);
         const IntegrationSupport<dim, spacedim> support(
           problem.dof_handler().get_triangulation(), id);
-        const auto elasticity =
-          [&](const auto &source, const auto &row, const double factor) {
-            (weak_term((factor * 2. * material.Lame_mu) *
-                         symmetric_gradient(source),
-                       symmetric_gradient(test(row))) *
-             support)
-              .add(builder);
-            (weak_term((factor * material.Lame_lambda) * divergence(source),
-                       divergence(test(row))) *
-             support)
-              .add(builder);
-          };
-        const auto inertia =
-          [&](const auto &source, const auto &row, const double factor) {
-            (weak_term((factor * material.rho) * value(source), test(row)) *
-             support)
-              .add(builder);
-          };
-        const auto damping =
-          [&](const auto &source, const auto &row, const double factor) {
-            elasticity(source, row, factor * material.rayleigh_beta);
-            inertia(source, row, factor * material.rayleigh_alpha);
-            (weak_term((factor * material.neta) * symmetric_gradient(source),
-                       symmetric_gradient(test(row))) *
-             support)
-              .add(builder);
-          };
-        elasticity(real, real, 1.);
-        elasticity(imaginary, imaginary, 1.);
-        inertia(real, real, -omega * omega);
-        inertia(imaginary, imaginary, -omega * omega);
-        damping(imaginary, real, -omega);
-        damping(real, imaginary, omega);
+        harmonic_detail::add_material(
+          builder,
+          ElasticityFreqFields<dim, spacedim>{
+            real, imaginary, real_space, imaginary_space},
+          material,
+          support,
+          omega,
+          volume_weight);
       }
     const auto forcing = [&](const auto &row, const bool imaginary_part) {
       KnownSource<Tensor<1, spacedim>, spacedim> body(
-        [&parameters, imaginary_part](const auto &context) {
+        [&parameters, imaginary_part, volume_weight](const auto &context) {
           Tensor<1, spacedim> result;
           const auto &function = parameters.get_rhs(context.material_id);
           const auto  factor =
@@ -151,14 +176,16 @@ namespace ImmersX
                                              parameters.rhs_phase,
                                              imaginary_part);
           for (unsigned int d = 0; d < spacedim; ++d)
-            result[d] = -factor * function.value(context.point, d);
+            result[d] =
+              -volume_weight * factor * function.value(context.point, d);
           return result;
         });
       known_term(body, test(row)).add(builder);
       for (const auto id : parameters.neumann_ids)
         {
           KnownSource<Tensor<1, spacedim>, spacedim> traction(
-            [&parameters, imaginary_part, id](const auto &context) {
+            [&parameters, imaginary_part, id, volume_weight](
+              const auto &context) {
               Tensor<1, spacedim> result;
               const auto         &function = parameters.get_neumann_bc(id);
               const auto          factor =
@@ -167,7 +194,8 @@ namespace ImmersX
                                                  parameters.neumann_phase,
                                                  imaginary_part);
               for (unsigned int d = 0; d < spacedim; ++d)
-                result[d] = -factor * function.value(context.point, d);
+                result[d] =
+                  -volume_weight * factor * function.value(context.point, d);
               return result;
             });
           known_term(traction, test(row)).on_boundary(id).add(builder);

@@ -192,6 +192,12 @@ namespace ImmersX
       AssertThrow(tria != nullptr, ExcNotInitialized());
       return *tria;
     }
+    const Domain<dim, spacedim> &
+    geometric_domain() const
+    {
+      AssertThrow(domain != nullptr, ExcNotInitialized());
+      return *domain;
+    }
     const Mapping<dim, spacedim> &
     mapping() const
     {
