@@ -1,11 +1,16 @@
-# Matrix and embedded additive/excess fiber under harmonic traction.
-set dimension = 2
+# Matrix and additive/excess reinforcement under harmonic traction.
+set dimension = 1
 set space dimension = 2
 
 subsection Fiber Reinforced Elasticity Frequency
+  set Formulation = independent
   set Frequencies = 0, 0.1, 0.2
   set Output directory = @TEST_OUTPUT_DIR@/tutorial-output/fiber-reinforced-elasticity-frequency
   set Multiplier FE degree = 0
+
+  subsection Lift
+    set Thickness = 0.1
+  end
 
   subsection Solver
     set Solver = direct
@@ -59,7 +64,7 @@ subsection Fiber Reinforced Elasticity Frequency
     end
     subsection Material properties
       subsection default
-        # Additive/excess coefficients on the line support.
+        # Additive/excess coefficients per unit reinforcement volume.
         set Lame mu = 8
         set Lame lambda = 8
         set Density = 0.2

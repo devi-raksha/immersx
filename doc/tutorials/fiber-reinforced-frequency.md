@@ -1,18 +1,22 @@
-# Fiber-reinforced harmonic elasticity
+# Harmonic reinforcement with or without a lift
 
-This example couples a two- or three-dimensional matrix to an independently
-meshed one-dimensional fiber. Both displacements have `spacedim` components.
-The fiber contributes excess stiffness, mass, and damping: its coefficients
-are additive to the matrix response already present along the fiber.
+The matrix always has dimension `spacedim`. The root `dimension` parameter is
+now the dimension of the reinforcement mesh; `space dimension` is the ambient
+dimension. The application accepts all six pairs with
+`1 <= dimension <= space dimension <= 3`.
 
-The input is
-`tutorials/fiber_reinforced_elasticity_freq/parameters.prm.in`:
+- If `dim < spacedim`, the reinforcement is lifted through a cross section of
+  dimension `spacedim-dim` to obtain a volume.
+- If `dim == spacedim`, its independently supplied volume mesh is used directly.
+  There is no `Lift` subsection in this case.
 
-```{literalinclude} ../../tutorials/fiber_reinforced_elasticity_freq/parameters.prm.in
-:language: ini
-```
+`Fiber Reinforced Elasticity Frequency/Formulation` selects the displacement
+model. Both choices use the reinforcement's excess material coefficients,
+which are added to the matrix response already present in that volume.
 
-Configure and run the Debug application with:
+## Run the examples
+
+Configure with MPI's C++ compiler, then build the application:
 
 ```bash
 cmake -S . -B build-debug -DCMAKE_BUILD_TYPE=Debug \
@@ -23,32 +27,68 @@ mpirun -np 2 build-debug/fiber_reinforced_elasticity_freq_debug \
   build-debug/tutorials/fiber_reinforced_elasticity_freq/parameters.prm
 ```
 
-The parameter template is configured into the build tree. Its output directory
-is absolute and lies below the build tree, so the command also works from
-another working directory when the executable and input paths are absolute.
-The Release target is `fiber_reinforced_elasticity_freq`.
+The Release target is `fiber_reinforced_elasticity_freq`. CMake configures the
+parameter templates into the build tree, with absolute output paths. The
+executable and input can also be addressed by absolute paths from another
+working directory.
 
-## Equations and phase convention
+Four complete inputs are provided under
+`tutorials/fiber_reinforced_elasticity_freq/`:
 
-For a real signal reconstructed as
-$u(t)=\operatorname{Re}(\widehat u\exp(i\omega t))$, the harmonic displacement
-operator is
+| Generated input | Reinforcement | Formulation |
+| --- | --- | --- |
+| `parameters.prm` | 1D in 2D, with a 1D lift | `independent` |
+| `shared.prm` | 1D in 2D, with a 1D lift | `shared` |
+| `full_dimension.prm` | 2D in 2D, without a lift | `independent` |
+| `sheet.prm` | 2D in 3D, with a 1D lift | `independent` |
+
+The canonical lifted input is:
+
+```{literalinclude} ../../tutorials/fiber_reinforced_elasticity_freq/parameters.prm.in
+:language: ini
+```
+
+Each example clamps the matrix's left side, applies a traction with a phase of
+15 degrees on the right, and sweeps 0, 0.1, and 0.2 Hz with nonzero damping.
+Change `Formulation` to switch models. Use a separate output directory for each
+run so old datasets from another model are not mistaken for current results.
+
+## Lift geometry and material units
+
+The `Lift` subsection is registered only for reduced reinforcement meshes.
+Its cross section has dimension `spacedim-dim`. The supported `hyper_cube`
+section is `[-1,1]^(spacedim-dim)`, scaled by `Thickness = h`; its physical
+measure is therefore `(2h)^(spacedim-dim)`. This is an interval in codimension
+one and a square in codimension two. A 2D sheet in 3D extrudes along its local
+normal, using both tangent directions.
+
+`Lift/Representative quadrature` and `Lift/Cross section` control the
+quadrature points and repetitions. Increase them to resolve the background FE
+traces and material interfaces. Points are located in the distributed matrix
+mesh through deal.II's particle facilities; every lifted point must lie inside
+the matrix's searchable domain. Quadrature is not split at matrix-cell
+interfaces, so increasing only the Gauss order need not give monotone
+convergence.
+
+Material coefficients are per unit physical volume. The lift supplies the
+section measure; do not multiply the material coefficients by it again. The
+current harmonic reconstruction uses the constant section mode:
+`Maximum basis degree = 0` and `Selected modes = 0`. The thickness is a positive
+numeric constant. The reduced harmonic model assumes flat cell manifolds;
+curved geometries can be approximated with piecewise-flat meshes. Geometry
+remains fixed during a sweep. The quadrature uses
+representative measure times section measure; curvature corrections for offset
+Jacobians and derivatives of transported frames are not included.
+
+## Frequency and phase convention
+
+For $u(t)=\operatorname{Re}(\widehat u\exp(i\omega t))$, each material contributes
 
 $$
-H(\omega)=K-\omega^2M+i\omega D,\qquad \omega=2\pi f.
+H(\omega)=K-\omega^2M+i\omega D,\qquad \omega=2\pi f,
 $$
 
-The real and imaginary equations are
-
-$$
-\begin{pmatrix}K-\omega^2M&-\omega D\\
-\omega D&K-\omega^2M\end{pmatrix}
-\begin{pmatrix}u_R\\u_I\end{pmatrix}
-=
-\begin{pmatrix}f_R\\f_I\end{pmatrix}.
-$$
-
-The volume material forms match those in `elasticity_freq`:
+with
 
 $$
 \begin{aligned}
@@ -60,16 +100,39 @@ D(u,v)&=\beta K(u,v)+\alpha M(u,v)
 \end{aligned}
 $$
 
-Gradients on an embedded mesh are the tangential gradients supplied by
-deal.II's `FEValuesViews`. The fiber uses the same vector-valued small-strain
-form as the existing fiber-reinforced elastodynamics application. It is not a
-nonlinear fiber law or a beam model with rotational degrees of freedom.
-Choose the excess coefficients, including any cross-sectional scaling,
-consistently with the intended one-dimensional model.
+The real matrix representation is
 
-Let $C_m$ integrate the matrix trace against the line multiplier, and let
-$C_f$ integrate the fiber displacement against that multiplier. The coupled
-complex equations are
+$$
+\begin{pmatrix}K-\omega^2M&-\omega D\\
+\omega D&K-\omega^2M\end{pmatrix}.
+$$
+
+The root `Frequencies` list is shared by matrix and reinforcement. Their
+`Material properties` and `Functions` subsections remain independent. Spatial
+load amplitudes are evaluated at `t=0`, then combined with phase angles in
+degrees. Reinforcement material ids are taken from its own mesh, including in
+the shared formulation.
+
+## Independent displacements
+
+`Formulation = independent` retains separate matrix and reinforcement Fields,
+with real and imaginary multiplier constraints. For reduced reinforcement,
+the lift reconstructs each ambient displacement component as constant across
+the section. Its native tangential strain, mass, damping, body forces, and
+endpoint/boundary tractions are weighted by the physical section measure.
+A full-dimensional reinforcement uses its ordinary volumetric strain and
+volume measure.
+
+Writing $E$ for constant normal extension, the continuity equations are
+
+$$
+\int_{\Omega_f}E\lambda\cdot(\widehat u_m-E\widehat u_f)=0.
+$$
+
+This is a weak section-average constraint. It does not require every matrix
+point in a section to have the same displacement. For full-dimensional
+reinforcement, $E$ is the identity. Both real and imaginary equations are
+imposed. The complex system is
 
 $$
 \begin{pmatrix}
@@ -82,49 +145,58 @@ C_m&-C_f&0
 \begin{pmatrix}\widehat f_m\\\widehat f_f\\0\end{pmatrix}.
 $$
 
-Separate real and imaginary continuity constraints enforce both components of
-$C_m\widehat u_m-C_f\widehat u_f=0$. The multiplier is the complex coupling
-reaction. The direct solver treats the complete saddle-point system; it does
-not assume that either displacement block is positive definite or invertible
-on its own. A frequency at an undamped resonance can still make the complete
-system singular.
+The multiplier defaults to vector-valued continuous `FE_Q` on the reinforcement
+mesh. `Multiplier FE degree` overrides its degree; `Multiplier space/Finite
+element` selects an explicit element with `spacedim` components. The mesh and
+space must yield independent constraints. The default direct solver treats
+the complete saddle-point system without assuming positive definite or
+individually invertible displacement blocks. An undamped resonance may still
+make the complete system singular.
 
-## Parameters and output
+This is a vector small-strain model with constant section reconstruction. It
+has no independent rotations or higher section modes.
 
-`Frequencies` in `Fiber Reinforced Elasticity Frequency` is the common sweep in
-Hz. Both Problems share this list. The matrix and fiber have independent
-`Grid generation`, `Material properties`, and `Functions` subsections. Loads
-and essential data are spatial amplitudes, evaluated at `t=0`; the frequency
-solver combines them with their configured phase angles in degrees.
+## Shared displacement
 
-The example clamps the left side of the matrix and applies a harmonic traction
-to its right side. The fiber lies inside the matrix, has free endpoints, and
-receives its load through the continuity constraint. The damping coefficients
-are nonzero. Set both root dimensions to three to select a 3D matrix and an
-embedded 3D line; update every vector-valued expression to three components.
+`Formulation = shared` registers only the matrix's real and imaginary
+spatial displacement Fields. The reinforcement mesh supplies integration
+geometry and material ids; it carries no independent displacement unknowns
+and introduces no multiplier. The equation is
 
-By default the multiplier uses continuous `FE_Q` with the fiber degree.
-`Multiplier FE degree` can choose another degree, and `Multiplier space/Finite
-element` can select an explicit vector element. It must have `dim` components.
-The mesh and multiplier choice must yield independent continuity equations;
-an unstable or overconstrained choice can produce a singular system.
+$$
+(H_m+H_f^{\mathrm{bulk}})\widehat u
+ =\widehat f_m+\widehat f_f^{\mathrm{bulk}}.
+$$
 
-The driver writes:
+Reinforcement stiffness, mass, and damping use the matrix displacement's full
+ambient gradients at physical reinforcement quadrature points. Its body force
+is evaluated at those same points, with its own phase and material overrides.
+The `Fiber` boundary-id sets must be empty: essential and Neumann boundary
+conditions belong to the matrix in this formulation. The default reinforcement
+boundary-id sets are empty.
 
-- `frequencies.csv`, mapping output indices to frequencies in Hz;
-- matrix and fiber VTU/PVTU datasets containing real and imaginary displacement,
-  component amplitudes, and component phase angles in degrees;
-- the two multiplier components under `interaction/frequency_<index>`.
+This formulation allows the matrix displacement to vary across the lifted
+section. It is therefore a different reduced model from constant-extension
+independent displacements, even with the same coefficients and geometry.
 
-`residual_norm()` reports the complete algebraic residual, and
-`continuity_norm()` reports the combined real and imaginary multiplier-row
-residual. These norms do not estimate the discretization error.
+## Output and current limits
 
-The coupled driver uses one prepared mesh per Problem. Set `Number of refinement
-cycles = 1`; choose the initial refinements independently before the sweep.
-Its adapter path supports strong Dirichlet and Neumann data. Weak Dirichlet data
-remain supported by the standalone `elasticity_freq` application. Normal-flux
-constraints are available only on full-dimensional 2D and 3D Problems.
+Both formulations write `frequencies.csv` and matrix VTU/PVTU datasets with real
+and imaginary displacement, component amplitudes, and phases in degrees.
+Independent displacements also write reinforcement datasets on its native
+mesh and multiplier datasets under `interaction/frequency_<index>`.
+
+`residual_norm()` reports the complete algebraic residual.
+`continuity_norm()` reports the combined multiplier-row residual in the
+independent formulation and is zero when no constraint is present.
+`reinforcement_measure()` reports the integrated physical reinforcement volume.
+These diagnostics do not estimate the discretization error.
+
+Each Problem uses one prepared mesh during the frequency sweep. Set
+`Number of refinement cycles = 1` and choose initial refinements before running.
+The adapter path supports strong Dirichlet conditions. Weak Dirichlet
+conditions remain available in standalone `elasticity_freq`; normal-flux
+constraints require a full-dimensional 2D or 3D Problem.
 
 ## Compose a harmonic Problem
 
