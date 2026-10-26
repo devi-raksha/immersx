@@ -149,6 +149,8 @@ skeleton in `.github/CHANGELOG_TEMPLATE.md`.
 
 ### Fixed
 
+- [PR #N](https://github.com/luca-heltai/immersx/pull/N) Write harmonic displacement datasets inside the selected output directory even when its path has no trailing separator.
+
 - [PR #N](https://github.com/luca-heltai/immersx/pull/N) Use the correct Trilinos vector assembly mode in the harmonic complex-Arnoldi updates, which previously failed Debug assertions.
 
 - [PR #276](https://github.com/luca-heltai/immersx/pull/276) Apply 1D Poisson Dirichlet data only to non-artificial cells with deal.II 9.7, preserving the pressure solution across MPI partitions.
@@ -239,6 +241,8 @@ skeleton in `.github/CHANGELOG_TEMPLATE.md`.
 - [PR #77](https://github.com/luca-heltai/immersx/pull/77) Documented the ImmersX core architecture.
 
 ### Tutorial
+
+- [PR #N](https://github.com/luca-heltai/immersx/pull/N) Document harmonic fiber reinforcement, its phase convention and extension API, and add a runnable frequency-sweep tutorial checked in serial and MPI by CTest.
 
 - [PR #275](https://github.com/luca-heltai/immersx/pull/275) Use a single coarse vessel VTK for the cube MMS cases, with parameter-controlled refinement and reference area retained by Domain during flow-mesh refinement.
 

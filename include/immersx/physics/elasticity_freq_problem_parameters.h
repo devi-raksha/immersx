@@ -117,9 +117,8 @@ namespace ImmersX
       domain_parameters.name_of_grid; ///< Grid generator/input name.
     std::string &arguments_for_grid =
       domain_parameters.arguments_for_grid; ///< Grid generator arguments.
-    double &grid_scale =
-      domain_parameters
-        .grid_scale; ///< Uniform scaling applied after grid input.
+    /// Uniform scaling applied after grid input.
+    double     &grid_scale = domain_parameters.grid_scale;
     std::string refinement_strategy =
       "fixed_fraction";                       ///< Adaptivity strategy.
     double       coarsening_fraction = 0.0;   ///< Coarsening fraction.

@@ -16,6 +16,8 @@ The introductory sequence is:
    from a 1D Problem onto 3D elasticity.
 7. [Fiber-reinforced elastodynamics](fiber-reinforced-elastodynamics) — two
    nonmatching Problems and a multiplier constraint.
+8. [Fiber-reinforced harmonic elasticity](fiber-reinforced-frequency) — a frequency
+   sweep with independent matrix and excess-fiber meshes.
 
 For the elastostatic–flow project, start with the
 [MetricFlowX coupling onboarding guide](metric-flow-x-elastostatic-onboarding).

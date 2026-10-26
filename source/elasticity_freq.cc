@@ -1227,7 +1227,7 @@ namespace ImmersX
     const std::string stem =
       par.output_name + "_cycle_" + std::to_string(cycle);
     data.write_vtu_with_pvtu_record(
-      par.output_directory, stem, frequency_index, mpi_communicator, 3);
+      par.output_directory + "/", stem, frequency_index, mpi_communicator, 3);
   }
 
   template <int dim, int spacedim>
