@@ -19,21 +19,13 @@
 #ifndef immersx_elasticity_freq_h
 #define immersx_elasticity_freq_h
 
-#include <deal.II/base/function.h>
-#include <deal.II/base/quadrature_lib.h>
-#include <deal.II/base/timer.h>
-
-#include <deal.II/lac/block_linear_operator.h>
-#include <deal.II/lac/generic_linear_algebra.h>
-#include <deal.II/lac/linear_operator.h>
-#include <deal.II/lac/linear_operator_tools.h>
-
-#include <variant>
-#define FORCE_USE_OF_TRILINOS
 #include <deal.II/base/conditional_ostream.h>
+#include <deal.II/base/function.h>
 #include <deal.II/base/index_set.h>
 #include <deal.II/base/parameter_acceptor.h>
 #include <deal.II/base/parsed_function.h>
+#include <deal.II/base/quadrature_lib.h>
+#include <deal.II/base/timer.h>
 #include <deal.II/base/utilities.h>
 #include <deal.II/base/work_stream.h>
 
@@ -66,8 +58,12 @@
 #include <deal.II/grid/tria_iterator.h>
 
 #include <deal.II/lac/affine_constraints.h>
+#include <deal.II/lac/block_linear_operator.h>
 #include <deal.II/lac/dynamic_sparsity_pattern.h>
 #include <deal.II/lac/full_matrix.h>
+#include <deal.II/lac/generic_linear_algebra.h>
+#include <deal.II/lac/linear_operator.h>
+#include <deal.II/lac/linear_operator_tools.h>
 #include <deal.II/lac/petsc_precondition.h>
 #include <deal.II/lac/petsc_solver.h>
 #include <deal.II/lac/petsc_sparse_matrix.h>
@@ -82,6 +78,9 @@
 #include <deal.II/lac/trilinos_vector.h>
 
 #include <deal.II/physics/elasticity/standard_tensors.h>
+
+#include <immersx/algebra/linear_algebra.h>
+#include <immersx/core/domain.h>
 
 // #include <deal.II/trilinos/parameter_acceptor.h>
 #include <deal.II/lac/vector.h>
@@ -138,12 +137,18 @@ namespace ImmersX
 {
   namespace LA
   {
-    using namespace dealii::LinearAlgebraTrilinos;
+    using namespace ImmersXLA;
   }
   template <int dim, int spacedim = dim>
   class ElasticityFreqProblem : public EnableObserverPointer
   {
+    static_assert(dim >= 1 && dim <= spacedim && spacedim <= 3,
+                  "ElasticityFreqProblem requires 1 <= dim <= spacedim <= 3.");
+
   public:
+    using VectorType = ImmersXLA::MPI::Vector;
+    using MatrixType = ImmersXLA::MPI::SparseMatrix;
+
     explicit ElasticityFreqProblem(
       const ElasticityFreqProblemParameters<dim, spacedim> &par);
     void
@@ -165,6 +170,45 @@ namespace ImmersX
     void
     compute_internal_and_boundary_stress(bool openfilefirsttime) const;
 
+    /** Owned coefficients of the most recently solved complex displacement. */
+    const VectorType &
+    real_displacement() const
+    {
+      return real_displacement_storage;
+    }
+    const VectorType &
+    imaginary_displacement() const
+    {
+      return imaginary_displacement_storage;
+    }
+
+    /** Spatial FE support, independent of the harmonic execution layout. */
+    const DoFHandler<dim, spacedim> &
+    dof_handler() const
+    {
+      return dh;
+    }
+    const IndexSet &
+    locally_owned_dofs() const
+    {
+      return owned_dofs[0];
+    }
+    const IndexSet &
+    locally_relevant_dofs() const
+    {
+      return relevant_dofs[0];
+    }
+    const AffineConstraints<double> &
+    real_constraints() const
+    {
+      return constraints;
+    }
+    const AffineConstraints<double> &
+    imaginary_part_constraints() const
+    {
+      return imaginary_constraints;
+    }
+
   private:
     bool
     uses_fully_distributed_triangulation() const;
@@ -182,22 +226,17 @@ namespace ImmersX
     MPI_Comm                                              mpi_communicator;
     ConditionalOStream                                    pcout;
     mutable TimerOutput                                   computing_timer;
-    using DistributedTriangulation =
-      parallel::distributed::Triangulation<spacedim>;
-    using FullyDistributedTriangulation =
-      parallel::fullydistributed::Triangulation<spacedim>;
-    using TriangulationVariant =
-      std::variant<DistributedTriangulation, FullyDistributedTriangulation>;
-    TriangulationVariant                      triangulation_storage;
-    parallel::TriangulationBase<spacedim>    *tria;
-    std::unique_ptr<FiniteElement<spacedim>>  fe;
-    std::unique_ptr<Quadrature<spacedim>>     quadrature;
-    std::unique_ptr<Quadrature<spacedim - 1>> face_quadrature_formula;
-    DoFHandler<spacedim>                      dh;
-    std::vector<IndexSet>                     owned_dofs, relevant_dofs;
-    AffineConstraints<double>  constraints, imaginary_constraints;
-    LA::MPI::BlockVector       solution, locally_relevant_solution;
-    unsigned int               cycle = 0, frequency_index = 0;
+    std::unique_ptr<Domain<dim, spacedim>>                domain;
+    parallel::TriangulationBase<dim, spacedim>           *tria = nullptr;
+    std::unique_ptr<FiniteElement<dim, spacedim>>         fe;
+    std::unique_ptr<Quadrature<dim>>                      quadrature;
+    std::unique_ptr<Quadrature<dim - 1>> face_quadrature_formula;
+    DoFHandler<dim, spacedim>            dh;
+    std::vector<IndexSet>                owned_dofs, relevant_dofs;
+    AffineConstraints<double>            constraints, imaginary_constraints;
+    LA::MPI::BlockVector                 solution, locally_relevant_solution;
+    VectorType   real_displacement_storage, imaginary_displacement_storage;
+    unsigned int cycle = 0, frequency_index = 0;
     FEValuesExtractors::Vector displacement;
     double                     current_frequency = 0.0;
     std::string                stress_part       = "real";
