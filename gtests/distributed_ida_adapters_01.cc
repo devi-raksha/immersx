@@ -682,8 +682,8 @@ TEST(DistributedIDA, BOTH_SchurRetainsDisplacementVelocityPath)
       builder.term(lambda, "position").state(u, identity);
       const auto inverse = [](const auto &matrix, const auto &prototype) {
         return make_local_preconditioner<FieldVector,
-                                                   ImmersXLA::MPI::SparseMatrix,
-                                                   ImmersXLA::MPI::PreconditionJacobi>(
+                                         ImmersXLA::MPI::SparseMatrix,
+                                         ImmersXLA::MPI::PreconditionJacobi>(
           matrix, prototype);
       };
       builder.preconditioner(u, inverse);

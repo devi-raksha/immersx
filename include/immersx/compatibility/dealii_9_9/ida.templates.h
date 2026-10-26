@@ -383,7 +383,7 @@ namespace ImmersX::Compatibility
 #  if DEAL_II_SUNDIALS_VERSION_LT(6, 0, 0)
       LS = SUNLinSolNewEmpty();
 #  else
-      LS = SUNLinSolNewEmpty(ida_ctx);
+      LS      = SUNLinSolNewEmpty(ida_ctx);
 #  endif
 
       LS->content = this;
@@ -449,7 +449,7 @@ namespace ImmersX::Compatibility
 #  if DEAL_II_SUNDIALS_VERSION_LT(6, 0, 0)
       J = SUNMatNewEmpty();
 #  else
-      J = SUNMatNewEmpty(ida_ctx);
+      J       = SUNMatNewEmpty(ida_ctx);
 #  endif
       J->content = this;
 

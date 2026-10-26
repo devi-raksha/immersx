@@ -201,7 +201,7 @@ namespace ImmersX
     assemble_poisson_system();
 #else
     void
-    assemble_rhs();
+                          assemble_rhs();
 #endif
     /** Assemble the reduced coupling matrix and right-hand side. */
     void
