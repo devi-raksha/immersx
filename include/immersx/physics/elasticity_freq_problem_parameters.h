@@ -41,13 +41,17 @@ namespace ImmersX
    */
   class ElasticityFreqProblemParameters : public ParameterAcceptor
   {
+    std::vector<double> owned_frequencies{100.0};
+
   public:
     /**
      * Build and register all parameter subsections used by the elasticity
-     * model.
+     * model. A shared frequency vector is registered by its owner and must
+     * outlive this parameter object.
      */
     explicit ElasticityFreqProblemParameters(
-      const std::string &subsection = "/Immersed Problem/");
+      const std::string   &subsection         = "/Immersed Problem/",
+      std::vector<double> *shared_frequencies = nullptr);
 
     /**
      * Return material parameters associated with a material id.
@@ -77,7 +81,7 @@ namespace ImmersX
     /** Domain settings use the same grid subsection as the legacy solver. */
     DomainParameters<dim, spacedim> domain_parameters;
 
-    std::vector<double> frequencies{100.0};
+    std::vector<double> &frequencies;
     double dirichlet_phase = 0.0, neumann_phase = 0.0, rhs_phase = 0.0;
     std::map<types::boundary_id, double> dirichlet_phase_by_id,
       neumann_phase_by_id;

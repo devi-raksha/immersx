@@ -221,3 +221,27 @@ TEST(ElasticityFreq, BOTH_AdapterAffineDisplacement)
   check_adapter_affine_displacement<2, 3>();
   check_adapter_affine_displacement<3, 3>();
 }
+
+TEST(ElasticityFreq, BOTH_RefinementParameterRoundTrip)
+{
+  std::string saved_parameters;
+  {
+    dealii::ParameterAcceptor::clear();
+    ImmersX::ElasticityFreqProblemParameters<2> parameters;
+    ImmersX::initialize_parameters_from_string(
+      "subsection Immersed Problem\n set Initial refinement = 1\n set Output directory = " +
+      ImmersX::TestPaths::output_directory("harmonic-refinement-roundtrip") +
+      "\nend\n");
+    EXPECT_EQ(parameters.initial_refinement, 1u);
+    std::ostringstream saved;
+    dealii::ParameterAcceptor::prm.print_parameters(
+      saved, dealii::ParameterHandler::PRM | dealii::ParameterHandler::Short);
+    saved_parameters = saved.str();
+  }
+  {
+    dealii::ParameterAcceptor::clear();
+    ImmersX::ElasticityFreqProblemParameters<2> parameters;
+    ImmersX::initialize_parameters_from_string(saved_parameters);
+    EXPECT_EQ(parameters.initial_refinement, 1u);
+  }
+}

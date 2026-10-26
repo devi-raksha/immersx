@@ -28,13 +28,17 @@ namespace ImmersX
     : public dealii::ParameterAcceptor
   {
   public:
+    std::vector<double> frequencies{1.};
+
     explicit FiberReinforcedElasticityFreqParameters(
       const std::string &subsection = "/Fiber Reinforced Elasticity Frequency/")
       : ParameterAcceptor(MaterialProperties::normalize_subsection(subsection))
       , matrix_parameters(MaterialProperties::normalize_subsection(subsection) +
-                          "Matrix/")
+                            "Matrix/",
+                          &frequencies)
       , fiber_parameters(MaterialProperties::normalize_subsection(subsection) +
-                         "Fiber/")
+                           "Fiber/",
+                         &frequencies)
       , multiplier_parameters(MaterialProperties::normalize_subsection(
                                 subsection) +
                                 "Multiplier space/",
@@ -68,7 +72,6 @@ namespace ImmersX
     ElasticityFreqProblemParameters<1, dim>   fiber_parameters;
     FiniteElementSpaceParameters<1, dim>      multiplier_parameters;
     LinearAdapterParameters                   solver_parameters;
-    std::vector<double>                       frequencies{1.};
     std::string  output_directory = "./output/fiber_reinforced_elasticity_freq";
     unsigned int multiplier_degree = 0;
   };

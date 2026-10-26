@@ -48,9 +48,12 @@ namespace ImmersX
 
   template <int dim, int spacedim>
   ElasticityFreqProblemParameters<dim, spacedim>::
-    ElasticityFreqProblemParameters(const std::string &subsection)
+    ElasticityFreqProblemParameters(const std::string   &subsection,
+                                    std::vector<double> *shared_frequencies)
     : ParameterAcceptor(harmonic_section(subsection))
     , domain_parameters(harmonic_section(subsection) + "Grid generation/")
+    , frequencies(shared_frequencies != nullptr ? *shared_frequencies :
+                                                  owned_frequencies)
     , default_material_properties("default",
                                   harmonic_section(subsection) +
                                     "Material properties/")
@@ -64,7 +67,8 @@ namespace ImmersX
   {
     domain_parameters.initial_refinement = 5;
     enter_subsection("Frequency domain");
-    add_parameter("Frequencies", frequencies);
+    if (shared_frequencies == nullptr)
+      add_parameter("Frequencies", frequencies);
     add_parameter("Dirichlet phase", dirichlet_phase);
     add_parameter("Neumann phase", neumann_phase);
     add_parameter("Rhs phase", rhs_phase);
@@ -120,6 +124,12 @@ namespace ImmersX
     }
 
     this->parse_parameters_call_back.connect([this]() {
+      // Keep both input aliases in saved files consistent with the actual mesh.
+      const std::string refinement = std::to_string(initial_refinement);
+      this->prm.set("Initial refinement", refinement);
+      this->prm.enter_subsection("Grid generation");
+      this->prm.set("Initial refinement", refinement);
+      this->prm.leave_subsection();
       // Ensure output directory exists.
       {
         namespace fs = std::filesystem;

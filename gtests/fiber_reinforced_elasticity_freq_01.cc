@@ -236,3 +236,24 @@ TEST(FiberReinforcedElasticityFreq, BOTH_CollectiveMetadataFailure)
   FiberReinforcedElasticityFreq<2> driver(parameters);
   EXPECT_THROW(driver.run(), dealii::ExceptionBase);
 }
+
+TEST(FiberReinforcedElasticityFreq, BOTH_CommonFrequencyParameters)
+{
+  dealii::ParameterAcceptor::clear();
+  ImmersX::FiberReinforcedElasticityFreqParameters<2> parameters;
+  parameters.output_directory =
+    ImmersX::TestPaths::output_directory("harmonic-shared-frequencies");
+  ImmersX::initialize_parameters_from_string(
+    "subsection Fiber Reinforced Elasticity Frequency\n set Frequencies = 0.1, 0.2\nend\n");
+  EXPECT_EQ(parameters.matrix_parameters.frequencies,
+            (std::vector<double>{0.1, 0.2}));
+  EXPECT_EQ(parameters.fiber_parameters.frequencies,
+            (std::vector<double>{0.1, 0.2}));
+  std::ostringstream saved;
+  dealii::ParameterAcceptor::prm.print_parameters(
+    saved, dealii::ParameterHandler::PRM | dealii::ParameterHandler::Short);
+  const auto text  = saved.str();
+  const auto first = text.find("set Frequencies");
+  ASSERT_NE(first, std::string::npos);
+  EXPECT_EQ(text.find("set Frequencies", first + 1), std::string::npos);
+}
