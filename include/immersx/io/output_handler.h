@@ -59,12 +59,31 @@ namespace ImmersX
     OutputHandler(const Space                   &space,
                   const OutputHandlerParameters &parameters,
                   std::string                    basename)
+      : OutputHandler(space,
+                      std::filesystem::path(parameters.output_directory),
+                      std::move(basename))
+    {}
+
+    /** Write fields below an application-provided output directory. */
+    OutputHandler(const Space                 &space,
+                  const std::filesystem::path &output_directory,
+                  std::string                  basename)
       : space_(space)
-      , parameters_(parameters)
+      , output_directory_(output_directory)
       , basename_(std::move(basename))
     {
       AssertThrow(!basename_.empty(),
                   dealii::ExcMessage("An output handler needs a basename."));
+    }
+
+    /** Prepare output for one registered scalar or vector field. */
+    template <typename SemanticField>
+    OutputHandler(const SemanticField         &field,
+                  const std::filesystem::path &output_directory,
+                  std::string                  basename)
+      : OutputHandler(field.space(), output_directory, std::move(basename))
+    {
+      add_field(field);
     }
 
     /** Register a scalar semantic field on this handler's FE space. */
@@ -118,11 +137,10 @@ namespace ImmersX
                     dealii::ExcMessage(
                       "Registered output fields do not cover the FE space."));
 
-      VectorType native;
-      native.reinit(space_.locally_owned_dofs(),
-                    space_.locally_relevant_dofs(),
-                    space_.mpi_communicator());
-      native = 0.;
+      VectorType locally_owned_native;
+      locally_owned_native.reinit(space_.locally_owned_dofs(),
+                                  space_.mpi_communicator());
+      locally_owned_native = 0.;
       std::vector<dealii::IndexSet> component_dofs(n_components);
       for (unsigned int component = 0; component < n_components; ++component)
         component_dofs[component] = dealii::DoFTools::extract_dofs(
@@ -151,8 +169,17 @@ namespace ImmersX
                       dealii::ExcMessage(
                         "A registered output field does not own the required "
                         "execution DoF."));
-          native[native_index] = values[execution_index];
+          locally_owned_native[native_index] = values[execution_index];
         }
+
+      // Execution stores independent coefficients; hanging-node values are
+      // reconstructed only when evaluating or exporting the FE function.
+      space_.constraints().distribute(locally_owned_native);
+      VectorType native;
+      native.reinit(space_.locally_owned_dofs(),
+                    space_.locally_relevant_dofs(),
+                    space_.mpi_communicator());
+      native = locally_owned_native;
       native.update_ghost_values();
 
       std::vector<std::string> names;
@@ -181,8 +208,7 @@ namespace ImmersX
 
       const auto communicator = space_.mpi_communicator();
       const auto rank = dealii::Utilities::MPI::this_mpi_process(communicator);
-      const std::filesystem::path output_directory(
-        parameters_.output_directory);
+      const std::filesystem::path output_directory(output_directory_);
       if (rank == 0)
         std::filesystem::create_directories(output_directory);
       MPI_Barrier(communicator);
@@ -250,7 +276,7 @@ namespace ImmersX
     }
 
     const Space                                &space_;
-    const OutputHandlerParameters              &parameters_;
+    std::filesystem::path                       output_directory_;
     std::string                                 basename_;
     std::vector<RegisteredField>                fields_;
     std::vector<std::pair<double, std::string>> output_records_;

@@ -14,6 +14,7 @@
 
 #ifdef IMMERSX_WITH_METRIC_FLOW_X
 
+#  include <immersx/algebra/local_preconditioner.h>
 #  include <immersx/core/contributor.h>
 #  include <immersx/core/fe_space.h>
 #  include <metric_flow_x/blood_flow_system.h>
@@ -49,8 +50,6 @@ namespace ImmersX
     std::shared_ptr<const Space> space;
     ScalarField                  area;
     ScalarField                  velocity;
-    dealii::IndexSet             area_components;
-    dealii::IndexSet             velocity_components;
   };
 
   /** Make a non-owning MetricFlowX contribution descriptor. */
@@ -79,6 +78,20 @@ namespace ImmersX
                                         problem.locally_owned_dofs(),
                                         problem.locally_relevant_dofs(),
                                         problem.differential_dofs());
+
+    // Coupled Schur preconditioning needs an inverse of the mixed flow block.
+    builder.preconditioner(
+      state, [](const auto &matrix, const auto &prototype) {
+        using Preconditioner = ::MetricFlowX::LA::MPI::PreconditionILU;
+        typename Preconditioner::AdditionalData data;
+#  ifdef DEAL_II_WITH_TRILINOS
+        // Algebraic face traces have zero diagonal entries in the native
+        // matrix.
+        data.ilu_atol = 1.e-5;
+#  endif
+        return make_local_preconditioner<Vector, Matrix, Preconditioner>(
+          matrix, prototype, data);
+      });
 
     auto term = builder.term(state, "blood-flow");
     term.residual([description, state](const auto &context) {
@@ -149,9 +162,7 @@ namespace ImmersX
     return {state,
             space,
             make_state_field(problem.area_extractor(), "area"),
-            make_state_field(problem.velocity_extractor(), "velocity"),
-            problem.component_dofs(Problem::Component::area),
-            problem.component_dofs(Problem::Component::velocity)};
+            make_state_field(problem.velocity_extractor(), "velocity")};
   }
 } // namespace ImmersX
 

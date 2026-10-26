@@ -2,6 +2,7 @@
 # applied to the unit and integration category tests below; MPI is orthogonal
 # and is selected by the process-count-specific test command.
 set(IMMERSX_UNIT_TEST_SUITES
+    TestCategoryTyped/*
     ContributorCore
     DimensionParameters
     FESpace
@@ -28,12 +29,19 @@ set(IMMERSX_UNIT_TEST_SUITES
     ReducedPoisson0D)
 
 set(IMMERSX_INTEGRATION_TEST_SUITES
+    BoundaryConditions
+    CoupledPoisson
+    CoupledPoissonElasticity
+    KnownTerm
+    LargeNetworks
+    ParticleCoupling
     ApplicationRoadmap
     ContributorPhysics
     CoupledElasticity
     FoundationalApplications
     TractionParameters
     DistributedIDA
+    SundialsCompatibility
     DistributedLiftedQuadrature
     ElasticStaticDimensions
     ElasticStaticExecution
@@ -44,9 +52,14 @@ set(IMMERSX_INTEGRATION_TEST_SUITES
     ElasticityCouplingParticleOutput
     Elastodynamics
     ImportedFiniteElementFields
+    Domain
+    LocalCoRefinement
+    LiftedElasticity
     LegacyInclusions
+    LiftedIntegrationSupport
     LinearAdapter
     PoissonPrimitives
+    LiftedPoisson
     KINSOLAdapter
     TimeIntervalParameters
     ReducedCoupling
@@ -59,6 +72,7 @@ set(IMMERSX_INTEGRATION_TEST_SUITES
     OutputHandler)
 
 set(IMMERSX_VALIDATION_TEST_SUITES
+    ElasticityCoupling
     ElasticStaticProblemValidation
     ElasticityValidation
     ElasticityTensorProductCouplingValidation
@@ -70,10 +84,6 @@ set(IMMERSX_VALIDATION_TEST_SUITES
     FiberReinforcedElastodynamicsValidation
     LargeNetworksValidation
     ElasticityCouplingIntegrationValidation
-    OneVesselMMS
-    OneVesselMMSDriver
-    MetricFlowXVesselWallGeometry
-    MetricFlowXVesselWallConstraint
     NavierStokes)
 
 set(IMMERSX_APPLICATION_TEST_SUITES
@@ -82,6 +92,7 @@ set(IMMERSX_APPLICATION_TEST_SUITES
     Poisson
     PoissonExecution
     PrescribedPoisson
+    LiftedPoissonApplication
     ReducedPoisson)
 
 set(_immersx_category_suites
@@ -98,91 +109,5 @@ endif()
 
 set(IMMERSX_TEST_PRIMARY_CATEGORIES unit integration validation application)
 
-# Keep this inventory next to the category assignment so adding a GoogleTest
-# suite requires an explicit classification.  The configure-time comparison
-# is intentionally small and fails closed when a suite is omitted or listed
-# twice.
-set(_immersx_expected_test_suites
-    AppExecutables
-    ApplicationRoadmap
-    ContributorCore
-    ContributorPhysics
-    CoupledElasticity
-    FoundationalApplications
-    TractionParameters
-    DimensionParameters
-    DistributedIDA
-    DistributedLiftedQuadrature
-    ElasticStaticDimensions
-    ElasticStaticExecution
-    ElasticStaticProblem
-    ElasticStaticProblemValidation
-    ElasticityValidation
-    ElasticityCouplingParameters
-    ElasticityCouplingConstruction
-    ElasticityCouplingIntegration
-    ElasticityCouplingParticleOutput
-    ElasticityCouplingIntegrationValidation
-    ElasticityTensorProductCouplingValidation
-    TriangulationBackendsValidation/*
-    WeakTermNonmatching
-    Elastodynamics
-    ElastodynamicsValidation
-    ElastodynamicsExecutionValidation
-    ElastodynamicsDimensionValidation
-    ElastodynamicsAdapterMMS
-    FESpace
-    TimeIntervalParameters
-    FiberReinforcedElastodynamicsValidation
-    ImportedFiniteElementFields
-    InclusionsBasis2
-    CCO
-    Constraint
-    InputFieldSelector
-    LargeNetworksValidation
-    LegacyInclusions
-    LinearAdapter
-    PoissonPrimitives
-    KINSOLAdapter
-    MaterialParameters
-    BoundaryConditionParameters
-    RhsParameters
-    OneVesselMMS
-    OneVesselMMSDriver
-    MetricFlowXVesselWallGeometry
-    MetricFlowXVesselWallConstraint
-    ModulatedParsedFunction
-    NavierStokes
-    Poisson
-    ApplicationExecution
-    PoissonExecution
-    PrescribedPoisson
-    ReducedCoupling
-    TensorProductSpace
-    ReferenceCrossSection
-    ReferenceFrame
-    TensorProductLift
-    ReferenceInclusion2
-    Inclusion3
-    Inclusion2
-    MixedField
-    StateHistory
-    SymbolicExpressionKernel
-    SymbolicFieldEvaluator
-    TensorProductCoupling
-    TensorProductSpace0D
-    ReducedCoupling0D
-    ReducedPoisson
-    ReducedPoisson0D
-    FieldCatalog
-    VTKUtils
-    WeakTerm
-    OutputHandler)
-list(SORT _immersx_expected_test_suites)
-set(_immersx_actual_test_suites ${_immersx_category_suites})
-list(SORT _immersx_actual_test_suites)
-if(NOT "${_immersx_actual_test_suites}" STREQUAL
-       "${_immersx_expected_test_suites}")
-  message(FATAL_ERROR
-          "Every aggregate GoogleTest suite must have exactly one category")
-endif()
+# The compiled GoogleTest registry is checked by check_test_categories.cmake.
+# Do not maintain a second manual inventory here.

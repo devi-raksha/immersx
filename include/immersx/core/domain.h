@@ -18,21 +18,30 @@
 
 #include <deal.II/base/config.h>
 
+#include <deal.II/base/observer_pointer.h>
 #include <deal.II/base/parameter_acceptor.h>
+#include <deal.II/base/point.h>
 
 #include <deal.II/distributed/fully_distributed_tria.h>
+#include <deal.II/distributed/repartitioning_policy_tools.h>
 #include <deal.II/distributed/tria.h>
 #include <deal.II/distributed/tria_base.h>
 
+#include <immersx/core/integration_support.h>
+#include <immersx/coupling/tensor_product_lift.h>
 #include <immersx/io/imported_finite_element_fields.h>
 #include <mpi.h>
 
+#include <functional>
 #include <memory>
 #include <string>
-#include <variant>
+#include <vector>
 
 namespace ImmersX
 {
+  template <int reduced_dim, int surface_dim, int spacedim, int n_components>
+  class LiftedIntegrationSupport;
+
   inline std::string
   domain_subsection(const std::string &subsection)
   {
@@ -77,7 +86,8 @@ namespace ImmersX
   };
 
 
-  /** An MPI-aware computational domain owning its deal.II triangulation. */
+  /** An MPI-aware computational domain with an owned or observed triangulation.
+   */
   template <int dim, int spacedim = dim>
   class Domain
   {
@@ -88,13 +98,22 @@ namespace ImmersX
       dealii::parallel::distributed::Triangulation<dim, spacedim>;
     using FullyDistributedTriangulation =
       dealii::parallel::fullydistributed::Triangulation<dim, spacedim>;
-    using TriangulationVariant =
-      std::variant<DistributedTriangulation, FullyDistributedTriangulation>;
     using TriangulationType =
       dealii::parallel::TriangulationBase<dim, spacedim>;
 
     explicit Domain(const DomainParameters<dim, spacedim> &parameters,
                     MPI_Comm communicator = MPI_COMM_WORLD);
+
+    /** Observe a triangulation owned by another object.
+     *
+     * The triangulation and parameters must outlive this Domain. The MPI
+     * communicator is taken from the triangulation. A populated mesh is kept
+     * unchanged and any requested VTK fields are imported onto that mesh;
+     * the input mesh must match it. An empty mesh can instead be initialized
+     * with make_grid() or prepare_grid()/finalize_grid().
+     */
+    Domain(const DomainParameters<dim, spacedim> &parameters,
+           TriangulationType                     &triangulation);
 
     ~Domain();
 
@@ -102,9 +121,47 @@ namespace ImmersX
     Domain &
     operator=(const Domain &) = delete;
 
-    /** Read or generate the mesh and apply scaling and refinement. */
+    /** Prepare and finalize a mesh without coupled local refinement. */
     void
     make_grid();
+
+    /** Read the mesh and initial fields before coupled refinement.
+     *
+     * A fullydistributed domain is prepared on a replicated serial mesh.
+     * Set serial=true to do the same for an embedded distributed domain.
+     * Call finalize_grid() only after all mesh adjustments. This must happen
+     * before attaching application DoFHandlers or requesting field views.
+     * Preparing an already populated domain throws rather than discarding it.
+     */
+    void
+    prepare_grid(bool serial = false);
+
+    /** Prepare an existing coarse mesh with its material and boundary ids.
+     * Imported VTK fields are read before refinement and transferred with it.
+     * The final triangulation must still be empty. Call finalize_grid() after
+     * all mesh changes, as for prepare_grid(true).
+     */
+    void
+    prepare_grid(const dealii::Triangulation<dim, spacedim> &coarse_mesh);
+
+    /** Partition the prepared mesh and transfer its refined input fields. */
+    void
+    finalize_grid();
+
+    /** Finalize a fullydistributed mesh with a one-time ownership policy.
+     * Apply the policy before transferring retained input fields. The policy
+     * is evaluated collectively and is not retained by the Domain.
+     */
+    void
+    finalize_grid(
+      const dealii::RepartitioningPolicyTools::Base<dim, spacedim> &policy);
+
+    bool
+    grid_is_prepared() const;
+
+    /** Mesh used during preparation; serial or parallel::distributed. */
+    dealii::Triangulation<dim, spacedim> &
+    refinement_triangulation();
 
     TriangulationType &
     triangulation();
@@ -117,6 +174,47 @@ namespace ImmersX
 
     MPI_Comm
     communicator() const;
+
+    /** Integrate over all active cells owned by this domain. */
+    IntegrationSupport<dim, spacedim>
+    support() const
+    {
+      return IntegrationSupport<dim, spacedim>(triangulation());
+    }
+
+    /** Integrate over active cells with the selected material id. */
+    IntegrationSupport<dim, spacedim>
+    support(const dealii::types::material_id material_id) const
+    {
+      return IntegrationSupport<dim, spacedim>(triangulation(), material_id);
+    }
+
+    /** Build a geometric integration support from a tensor-product lift. */
+    template <int surface_dim, int n_components>
+    LiftedIntegrationSupport<dim, surface_dim, spacedim, n_components>
+    lift(const TensorProductLift<dim, surface_dim, spacedim, n_components>
+           &descriptor) const;
+
+    template <int surface_dim, int n_components>
+    LiftedIntegrationSupport<dim, surface_dim, spacedim, n_components>
+    lift(const TensorProductLift<dim, surface_dim, spacedim, n_components>
+                                          &descriptor,
+         FixedThicknessEvaluator<spacedim> thickness_evaluator) const;
+
+    /** Integrate over every boundary face of this domain. */
+    BoundaryIntegrationSupport<dim, spacedim>
+    boundary_support() const
+    {
+      return BoundaryIntegrationSupport<dim, spacedim>(triangulation());
+    }
+
+    /** Integrate over boundary faces with the selected boundary id. */
+    BoundaryIntegrationSupport<dim, spacedim>
+    boundary_support(const dealii::types::boundary_id boundary_id) const
+    {
+      return BoundaryIntegrationSupport<dim, spacedim>(triangulation(),
+                                                       boundary_id);
+    }
 
     /** Whether VTK data fields have been imported for this domain. */
     bool
@@ -131,20 +229,35 @@ namespace ImmersX
     field(const std::string &name, unsigned int component = 0) const;
 
   private:
-    static TriangulationVariant
+    void
+    finalize_grid_impl(
+      const dealii::RepartitioningPolicyTools::Base<dim, spacedim> *policy);
+
+    static std::unique_ptr<TriangulationType>
     make_triangulation_storage(
       const DomainParameters<dim, spacedim> &parameters,
       MPI_Comm                               communicator);
 
     void
+    prepare_grid_impl(bool                                        serial,
+                      const dealii::Triangulation<dim, spacedim> *coarse_mesh);
+
+    void
     import_vtk_fields_if_requested();
 
-    const DomainParameters<dim, spacedim> &parameters_;
-    MPI_Comm                               communicator_;
-    TriangulationVariant                   triangulation_storage_;
-    TriangulationType                     *triangulation_ = nullptr;
-    std::unique_ptr<ImportedFields>        vtk_fields_;
+    struct SerialFields;
+
+    const DomainParameters<dim, spacedim>     &parameters_;
+    MPI_Comm                                   communicator_;
+    std::unique_ptr<TriangulationType>         triangulation_storage_;
+    dealii::ObserverPointer<TriangulationType> triangulation_;
+    std::unique_ptr<ImportedFields>            vtk_fields_;
+    std::unique_ptr<dealii::Triangulation<dim, spacedim>> serial_triangulation_;
+    std::unique_ptr<SerialFields>                         serial_fields_;
+    bool grid_prepared_ = false;
   };
 } // namespace ImmersX
+
+#include <immersx/core/lifted_integration_support.h>
 
 #endif // immersx_domain_h

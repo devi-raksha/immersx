@@ -62,7 +62,8 @@ namespace
   void
   configure_problem(FiberReinforcedElastodynamicsParameters<2> &parameters,
                     const bool                                  forcing,
-                    const bool                                  ramp = false)
+                    const bool                                  ramp = false,
+                    const std::string &multiplier_element            = "auto")
   {
     parameters.output_directory = TestPaths::output_directory(
       forcing ? "fiber-reinforced-forced" : "fiber-reinforced-zero");
@@ -73,6 +74,10 @@ namespace
         set dimension       = 2
         set space dimension = 2
         subsection Fiber Reinforced Elastodynamics
+          subsection Multiplier space
+            set Finite element = )") +
+      multiplier_element + R"(
+          end
           subsection Time interval
             set Final time   = 0.02
             set Output time interval = 0.01
@@ -90,7 +95,7 @@ namespace
             end
             subsection Functions
               subsection Body force
-                set Function expression = )") +
+                set Function expression = )" +
       (forcing ? (ramp ? "t; t" : "0; 1") : "0; 0") +
       R"(
                 set Variable names      = x,y,t
@@ -246,6 +251,34 @@ namespace
 #endif
 } // namespace
 
+TEST(FiberReinforcedElastodynamicsValidation, BOTH_ConfigurableMultiplierSpace)
+{
+  ParameterAcceptor::clear();
+  FiberReinforcedElastodynamicsParameters<2> parameters;
+  configure_problem(parameters, true, false, "FESystem<1>[FE_DGQ<1>(0)^2]");
+  FiberReinforcedElastodynamics<2> driver(parameters);
+  driver.setup();
+  EXPECT_EQ(driver.multiplier().size(),
+            2 * driver.fiber_problem().triangulation().n_global_active_cells());
+  driver.set_initial_conditions();
+  driver.advance_one_timestep();
+  EXPECT_GT(driver.matrix_problem().displacement().l2_norm(), 0.);
+  EXPECT_GT(driver.fiber_problem().displacement().l2_norm(), 0.);
+  EXPECT_LT(driver.residuals().velocity_constraint, 1.e-8);
+  EXPECT_LT(driver.residuals().matrix_velocity, 1.e-8);
+  EXPECT_LT(driver.residuals().fiber_velocity, 1.e-8);
+}
+
+TEST(FiberReinforcedElastodynamicsValidation, RejectsWrongMultiplierComponents)
+{
+  ParameterAcceptor::clear();
+  FiberReinforcedElastodynamicsParameters<2> parameters;
+  configure_problem(parameters, false);
+  parameters.multiplier_parameters.finite_element = "FE_Q<1>(1)";
+  FiberReinforcedElastodynamics<2> driver(parameters);
+  EXPECT_THROW(driver.setup(), dealii::ExceptionBase);
+}
+
 TEST(FiberReinforcedElastodynamicsValidation, ZeroPreservation)
 {
   ParameterAcceptor::clear();
@@ -278,7 +311,66 @@ TEST(FiberReinforcedElastodynamicsValidation, CoupledResidualAndExcessResponse)
   EXPECT_TRUE(driver.fiber_problem().state_is_finite());
   EXPECT_LT(driver.residuals().velocity_constraint, 1.e-8);
   EXPECT_TRUE(std::isfinite(driver.fiber_excess_elastic_energy()));
-  EXPECT_GT(driver.matrix_only_displacement_difference(), 1.e-12);
+}
+
+TEST(FiberReinforcedElastodynamicsValidation,
+     CoupledResponseDiffersFromIndependentMatrixHistory)
+{
+  ParameterAcceptor::clear();
+  FiberReinforcedElastodynamicsParameters<2> parameters;
+  configure_problem(parameters, true, true);
+  parameters.time_parameters.final_time            = 0.04;
+  parameters.fixed_step_parameters.number_of_steps = 4;
+  FiberReinforcedElastodynamics<2> driver(parameters);
+  driver.setup();
+  driver.set_initial_conditions();
+  const auto                          &problem = driver.matrix_problem();
+  std::vector<types::global_dof_index> free_dofs;
+  for (const auto i : problem.locally_owned_dofs())
+    if (!problem.velocity_constraints().is_constrained(i))
+      free_dofs.push_back(i);
+  ASSERT_EQ(free_dofs.size(), 2u);
+  Vector<double> displacement(free_dofs.size()), velocity(free_dofs.size());
+  for (unsigned int i = 0; i < free_dofs.size(); ++i)
+    {
+      displacement[i] = problem.displacement()[free_dofs[i]];
+      velocity[i]     = problem.velocity()[free_dofs[i]];
+    }
+  // An independent dense solve on the unconstrained space evolves its own
+  // history; it must not use the driver's coupled previous state.
+  for (unsigned int step = 0; step < 4; ++step)
+    {
+      const double dt                            = step < 2 ? 0.01 : 0.005;
+      parameters.fixed_step_parameters.time_step = dt;
+      LA::MPI::Vector force;
+      problem.body_force_at_time(driver.current_time() + dt, force);
+      FullMatrix<double> effective(free_dofs.size());
+      Vector<double>     rhs(free_dofs.size()), next_velocity(free_dofs.size());
+      for (unsigned int i = 0; i < free_dofs.size(); ++i)
+        {
+          rhs[i] = force[free_dofs[i]];
+          for (unsigned int j = 0; j < free_dofs.size(); ++j)
+            {
+              const auto   row = free_dofs[i], column = free_dofs[j];
+              const double mass = problem.mass_matrix().el(row, column);
+              const double stiffness =
+                problem.stiffness_matrix().el(row, column);
+              effective(i, j) = mass / dt +
+                                problem.damping_matrix().el(row, column) +
+                                dt * stiffness;
+              rhs[i] += mass * velocity[j] / dt - stiffness * displacement[j];
+            }
+        }
+      effective.gauss_jordan();
+      effective.vmult(next_velocity, rhs);
+      velocity = next_velocity;
+      displacement.add(dt, velocity);
+      driver.advance_one_timestep();
+      LA::MPI::Vector difference(problem.displacement());
+      for (unsigned int i = 0; i < free_dofs.size(); ++i)
+        difference[free_dofs[i]] -= displacement[i];
+      EXPECT_GT(difference.l2_norm(), 1.e-12);
+    }
 }
 
 #ifdef DEAL_II_WITH_SUNDIALS
@@ -293,8 +385,7 @@ TEST(FiberReinforcedElastodynamicsValidation,
   configure_problem(parameters, true);
   FiberReinforcedElastodynamics<2> driver(parameters);
 
-  // run() exercises setup(), initial conditions, setup_ida(), and the initial
-  // derivative calculation, then continues into IDA after that scope ends.
+  // The coupled initial mass solve must release its observer before IDA runs.
   driver.run();
 
   EXPECT_EQ(driver.time_step_number(), 2u);

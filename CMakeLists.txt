@@ -59,6 +59,8 @@ option(IMMERSX_BUILD_CORAL_PLUGINS
   "Build Coral plugins when a compatible Coral package is available." ON)
 option(IMMERSX_ENABLE_CORAL_GRAPH_TESTS
   "Enable numerical Coral graph integration tests." OFF)
+option(IMMERSX_BUILD_BENCHMARKS
+  "Build standalone ImmersX versus deal.II benchmarks." OFF)
 
 set(IMMERSX_INSTALL_DOCDIR "${CMAKE_INSTALL_DATADIR}/doc/immersx"
   CACHE PATH "Installation directory for ImmersX documentation")
@@ -265,41 +267,49 @@ if(_immersx_requested_build_type_count EQUAL 2)
   set(Debug_ctest_suffix ".Debug")
 endif()
 
-# MetricFlowX is an optional public dependency.  Treat a package that reports
-# itself as found but does not provide its public target as unusable.
+# CMake selects imported configurations using the global CMAKE_BUILD_TYPE,
+# not the variant passed to DEAL_II_SETUP_TARGET. DebugRelease therefore needs
+# concrete MetricFlowX targets to keep both the library and deal.II ABI aligned.
 set(IMMERSX_WITH_METRIC_FLOW_X OFF)
 find_package(MetricFlowX CONFIG QUIET)
-if(MetricFlowX_FOUND AND TARGET MetricFlowX::metric_flow_x)
-  get_target_property(_metric_flow_x_imported_configs
-    MetricFlowX::metric_flow_x IMPORTED_CONFIGURATIONS)
+if(MetricFlowX_FOUND)
   set(_metric_flow_x_compatible ON)
-  if(_metric_flow_x_imported_configs AND
-     NOT _metric_flow_x_imported_configs MATCHES "-NOTFOUND$")
-    set(_metric_flow_x_available_configs)
-    foreach(_metric_flow_x_config IN LISTS _metric_flow_x_imported_configs)
-      string(TOUPPER "${_metric_flow_x_config}" _metric_flow_x_config_upper)
-      list(APPEND _metric_flow_x_available_configs
-           "${_metric_flow_x_config_upper}")
-    endforeach()
-    foreach(_build_type IN LISTS IMMERSX_REQUESTED_BUILD_TYPES)
-      string(TOUPPER "${_build_type}" _build_type_upper)
-      if(NOT _build_type_upper IN_LIST _metric_flow_x_available_configs)
-        set(_metric_flow_x_compatible OFF)
+  foreach(_build_type IN LISTS IMMERSX_REQUESTED_BUILD_TYPES)
+    set(_metric_flow_x_target "MetricFlowX::metric_flow_x_${_build_type}")
+    if(TARGET ${_metric_flow_x_target})
+      set(IMMERSX_METRIC_FLOW_X_TARGET_${_build_type}
+          "${_metric_flow_x_target}")
+    elseif(NOT IMMERSX_BUILD_BOTH_VARIANTS AND
+           TARGET MetricFlowX::metric_flow_x)
+      # Older packages export only one generic target. Preserve that path for
+      # single-variant builds, but do not let CMake fall back to another ABI.
+      set(IMMERSX_METRIC_FLOW_X_TARGET_${_build_type}
+          MetricFlowX::metric_flow_x)
+      get_target_property(_metric_flow_x_imported_configs
+        MetricFlowX::metric_flow_x IMPORTED_CONFIGURATIONS)
+      if(_metric_flow_x_imported_configs AND
+         NOT _metric_flow_x_imported_configs MATCHES "-NOTFOUND$")
+        string(TOUPPER "${_metric_flow_x_imported_configs}"
+               _metric_flow_x_available_configs)
+        string(TOUPPER "${_build_type}" _build_type_upper)
+        if(NOT _build_type_upper IN_LIST _metric_flow_x_available_configs)
+          set(_metric_flow_x_compatible OFF)
+        endif()
       endif()
-    endforeach()
-  endif()
+    else()
+      set(_metric_flow_x_compatible OFF)
+    endif()
+  endforeach()
   if(_metric_flow_x_compatible)
     set(IMMERSX_WITH_METRIC_FLOW_X ON)
     message(STATUS "MetricFlowX support enabled")
   else()
     message(STATUS
-      "MetricFlowX support disabled (package does not provide all requested "
-      "Debug/Release configurations)")
+      "MetricFlowX support disabled (package does not provide compatible "
+      "targets for all requested Debug/Release variants; DebugRelease "
+      "requires explicit MetricFlowX::metric_flow_x_Debug and "
+      "MetricFlowX::metric_flow_x_Release targets)")
   endif()
-elseif(MetricFlowX_FOUND)
-  message(WARNING
-    "MetricFlowX was found, but MetricFlowX::metric_flow_x is unavailable; "
-    "disabling MetricFlowX support")
 else()
   message(STATUS "MetricFlowX support disabled (package not found)")
 endif()
@@ -497,7 +507,8 @@ FOREACH(_build_type ${_d2_build_types})
         # DEAL_II_SETUP_TARGET uses the legacy plain signature, so keep this
         # target's link declarations consistent with it.  Plain
         # target_link_libraries entries remain transitive for exported targets.
-        TARGET_LINK_LIBRARIES(${_lib} MetricFlowX::metric_flow_x)
+        TARGET_LINK_LIBRARIES(${_lib}
+          ${IMMERSX_METRIC_FLOW_X_TARGET_${_build_type}})
       ENDIF()
       IF(OpenMP_CXX_FOUND)
         IF(DEFINED _OPENMP_CXX_TARGET)
@@ -578,6 +589,8 @@ ENDIF()
 # Register CTest before adding test subdirectories so their add_test() calls
 # are included in the top-level test manifest.
 ENABLE_TESTING()
+include(cmake/lifted_elasticity_tests.cmake)
+include(cmake/metric_flow_x_package_tests.cmake)
 
 if(IMMERSX_WITH_CORAL)
   add_subdirectory(coral)
@@ -605,6 +618,10 @@ IF(ENABLE_GOOGLE_TESTING)
       MESSAGE(WARNING "GTest library not found. Tests will not be compiled!")
   endif ()
 ENDIF()
+
+if(IMMERSX_BUILD_BENCHMARKS)
+  add_subdirectory(benchmarks)
+endif()
 
 # Installation and downstream package metadata.
 IF(IMMERSX_LIBRARY_TARGETS)

@@ -17,7 +17,9 @@
 #include <deal.II/base/timer.h>
 
 #include <deal.II/lac/precondition.h>
+#include <deal.II/lac/read_write_vector.h>
 #include <deal.II/lac/solver_gmres.h>
+#include <deal.II/lac/sparse_direct.h>
 
 #include <immersx/core/detail/execution_composition.h>
 #include <immersx/core/problem_handle.h>
@@ -34,7 +36,7 @@
 #include <vector>
 
 #ifdef DEAL_II_WITH_SUNDIALS
-#  include <deal.II/sundials/ida.h>
+#  include <immersx/compatibility/dealii_9_9/ida.h>
 #endif
 
 #ifdef DEAL_II_WITH_SUNDIALS
@@ -63,7 +65,14 @@ namespace ImmersX
     using RestartFunction =
       std::function<bool(const double, GlobalVectorType &, GlobalVectorType &)>;
     using AdditionalData =
-      typename dealii::SUNDIALS::IDA<GlobalVectorType>::AdditionalData;
+      typename Compatibility::SUNDIALS::IDA<GlobalVectorType>::AdditionalData;
+    enum class LinearSolver
+    {
+      iterative,
+      umfpack,
+      mumps
+    };
+
     IDAAdapter(const TimeIntervalParameters &time_parameters,
                const IDAParameters          &ida_parameters,
                const MPI_Comm                communicator,
@@ -79,6 +88,77 @@ namespace ImmersX
                         dealii::TimerOutput::summary,
                         dealii::TimerOutput::wall_times)
     {}
+
+    /** Select the coupled linear solver before initialization.
+     * Direct solvers reuse their factorization until IDA requests a new
+     * Jacobian setup. UMFPACK requires one rank; MUMPS uses the composition's
+     * communicator and distributed matrix.
+     */
+    void
+    set_linear_solver(const LinearSolver solver)
+    {
+      AssertThrow(
+        !connected_,
+        dealii::ExcMessage(
+          "The linear solver must be selected before solver initialization."));
+      if (solver == LinearSolver::umfpack)
+        {
+          AssertThrow(dealii::Utilities::MPI::n_mpi_processes(
+                        composition_.communicator()) == 1,
+                      dealii::ExcMessage(
+                        "The UMFPACK solver requires one MPI rank."));
+#  ifndef DEAL_II_WITH_UMFPACK
+          AssertThrow(
+            false,
+            dealii::ExcMessage(
+              "The UMFPACK solver requires deal.II configured with UMFPACK."));
+#  endif
+        }
+      else if (solver == LinearSolver::mumps)
+        {
+#  ifndef DEAL_II_WITH_MUMPS
+          AssertThrow(
+            false,
+            dealii::ExcMessage(
+              "The MUMPS solver requires deal.II configured with MUMPS."));
+#  endif
+        }
+      AssertThrow(
+        solver == LinearSolver::iterative || !solve_,
+        dealii::ExcMessage(
+          "A direct solver cannot be combined with a custom linear solver."));
+      linear_solver_ = solver;
+    }
+
+    /** Select serial UMFPACK, or restore the default iterative solver. */
+    void
+    set_serial_direct_solver(const bool enabled = true)
+    {
+      set_linear_solver(enabled ? LinearSolver::umfpack :
+                                  LinearSolver::iterative);
+    }
+
+    /** Include one off-diagonal primal step in the Schur approximation. */
+    void
+    set_schur_primal_coupling(const bool enabled = true)
+    {
+      AssertThrow(
+        !connected_,
+        dealii::ExcMessage(
+          "Schur controls must be configured before solver initialization."));
+      include_schur_primal_coupling_ = enabled;
+    }
+
+    /** Configure IDA controls before solver() or solve() connects callbacks. */
+    void
+    set_additional_data(const AdditionalData &data)
+    {
+      AssertThrow(!connected_,
+                  dealii::ExcMessage(
+                    "IDAAdapter controls must be configured before solver "
+                    "initialization."));
+      additional_data_ = data;
+    }
 
     const AdditionalData &
     additional_data() const
@@ -118,7 +198,7 @@ namespace ImmersX
             << composition_.n_fields() << " semantic field(s)." << std::endl;
     }
 
-    dealii::SUNDIALS::IDA<GlobalVectorType> &
+    Compatibility::SUNDIALS::IDA<GlobalVectorType> &
     solver()
     {
       finalize();
@@ -233,6 +313,20 @@ namespace ImmersX
       return field(state, semantic_field.id());
     }
 
+    /** Write semantic fields without exposing the adapter's execution layout.
+     */
+    template <typename Output>
+    void
+    write_output(Output                 &output,
+                 const GlobalVectorType &state,
+                 const double            time = 0.) const
+    {
+      StateView<FieldVectorType> view(composition_.state_layout(), time);
+      for (std::size_t i = 0; i < composition_.state_layout().n_fields(); ++i)
+        view.bind(FieldId(i), composition_.field(state, FieldId(i)));
+      output.write(view, time);
+    }
+
     dealii::IndexSet
     differential_components()
     {
@@ -342,7 +436,7 @@ namespace ImmersX
           if (ida_data.reset_type == AdditionalData::use_y_diff)
             ida_data.reset_type = AdditionalData::none;
         }
-      ida_ = std::make_unique<dealii::SUNDIALS::IDA<GlobalVectorType>>(
+      ida_ = std::make_unique<Compatibility::SUNDIALS::IDA<GlobalVectorType>>(
         ida_data, composition_.communicator());
       ida_->reinit_vector = [this](GlobalVectorType &vector) {
         composition_.reinit(vector);
@@ -367,7 +461,51 @@ namespace ImmersX
         AssertThrow(current_jacobian_.has_value(),
                     dealii::ExcMessage("IDA requested a solve without a "
                                        "current Jacobian."));
-        if (solve_)
+        if (linear_solver_ == LinearSolver::umfpack)
+          {
+            dealii::TimerOutput::Scope backsolve_timer(computing_timer,
+                                                       "Direct backsolve");
+            AssertThrow(
+              direct_solver_,
+              dealii::ExcMessage(
+                "IDA requested a direct solve without a factorization."));
+            dealii::Vector<double> source(rhs.size()), destination(rhs.size());
+            for (dealii::types::global_dof_index i = 0; i < rhs.size(); ++i)
+              source[i] = rhs[i];
+            direct_solver_->vmult(destination, source);
+            for (dealii::types::global_dof_index i = 0; i < rhs.size(); ++i)
+              dst[i] = destination[i];
+            dst.compress(dealii::VectorOperation::insert);
+          }
+        else if (linear_solver_ == LinearSolver::mumps)
+          {
+#  ifdef DEAL_II_WITH_MUMPS
+            dealii::TimerOutput::Scope backsolve_timer(computing_timer,
+                                                       "Direct backsolve");
+            AssertThrow(
+              mumps_solver_,
+              dealii::ExcMessage(
+                "IDA requested a MUMPS solve without a factorization."));
+            auto source = composition_.pack(rhs);
+            source.compress(dealii::VectorOperation::insert);
+            mumps_solver_->vmult(mumps_solution_, source);
+            dealii::LinearAlgebra::ReadWriteVector<double> imported(
+              source.locally_owned_elements());
+            imported.import_elements(mumps_solution_,
+                                     dealii::VectorOperation::insert);
+            for (const auto index : source.locally_owned_elements())
+              source[index] = imported[index];
+            source.compress(dealii::VectorOperation::insert);
+            composition_.unpack(source, dst);
+            dst.compress(dealii::VectorOperation::insert);
+#  else
+            AssertThrow(
+              false,
+              dealii::ExcMessage(
+                "The MUMPS solver requires deal.II configured with MUMPS."));
+#  endif
+          }
+        else if (solve_)
           {
             pcout << "IDAAdapter: invoking the configured linear solver."
                   << std::endl;
@@ -378,13 +516,24 @@ namespace ImmersX
         else
           {
             dst = 0.;
-            dealii::SolverControl control(5000, std::max(1.e-12, tolerance));
-            dealii::SolverGMRES<GlobalVectorType> solver(control);
+            // Small physical loads still need a correction. An absolute floor
+            // can accept the initial zero iterate and stall the DAE solve.
+            dealii::SolverControl control(5000,
+                                          std::min(tolerance,
+                                                   1.e-8 * rhs.l2_norm()));
+            // Avoid division by zero at exact Krylov breakdown in deal.II 9.7.
+            typename dealii::SolverGMRES<GlobalVectorType>::AdditionalData data;
+            data.orthogonalization_strategy = dealii::LinearAlgebra::
+              OrthogonalizationStrategy::modified_gram_schmidt;
+            dealii::SolverGMRES<GlobalVectorType> solver(control, data);
             if (current_preconditioner_.has_value())
               if (current_solver_is_flexible_)
                 {
                   typename dealii::SolverFGMRES<
-                    GlobalVectorType>::AdditionalData    flexible_data(100);
+                    GlobalVectorType>::AdditionalData flexible_data(100);
+                  flexible_data.orthogonalization_strategy =
+                    dealii::LinearAlgebra::OrthogonalizationStrategy::
+                      modified_gram_schmidt;
                   dealii::SolverFGMRES<GlobalVectorType> flexible_solver(
                     control, flexible_data);
                   flexible_solver.solve(*current_jacobian_,
@@ -499,7 +648,79 @@ namespace ImmersX
       current_jacobian_ = std::move(stable);
       current_preconditioner_.reset();
       current_solver_is_flexible_ = false;
-      if (!solve_)
+      if (linear_solver_ == LinearSolver::umfpack ||
+          linear_solver_ == LinearSolver::mumps)
+        {
+          dealii::TimerOutput::Scope direct_timer(computing_timer,
+                                                  "Materialize Jacobian");
+          const auto                 matrix = composition_.monolithic_matrix(
+            composition_.block_matrix(snapshot->state_storage,
+                                      &snapshot->derivative_storage,
+                                      alpha,
+                                      time));
+          if (linear_solver_ == LinearSolver::umfpack)
+            {
+              dealii::DynamicSparsityPattern sparsity(matrix.m(), matrix.n());
+              for (dealii::types::global_dof_index row = 0; row < matrix.m();
+                   ++row)
+                for (auto entry = matrix.begin(row), end = matrix.end(row);
+                     entry != end;
+                     ++entry)
+                  sparsity.add(row, entry->column());
+              dealii::SparsityPattern pattern;
+              pattern.copy_from(sparsity);
+              dealii::SparseMatrix<double> serial_matrix(pattern);
+#  ifndef IMMERSX_USE_PETSC_LA
+              serial_matrix.copy_from(matrix);
+#  else
+              for (dealii::types::global_dof_index row = 0; row < matrix.m();
+                   ++row)
+                for (auto entry = matrix.begin(row), end = matrix.end(row);
+                     entry != end;
+                     ++entry)
+                  serial_matrix.set(row, entry->column(), entry->value());
+#  endif
+              direct_timer.stop();
+              dealii::TimerOutput::Scope factor_timer(computing_timer,
+                                                      "Factorize Jacobian");
+              direct_solver_ = std::make_unique<dealii::SparseDirectUMFPACK>();
+              direct_solver_->initialize(serial_matrix);
+              pcout << "IDAAdapter: UMFPACK factorized " << matrix.m()
+                    << " rows, " << serial_matrix.n_nonzero_elements()
+                    << " matrix entries." << std::endl;
+            }
+          else if (linear_solver_ == LinearSolver::mumps)
+            {
+#  ifdef DEAL_II_WITH_MUMPS
+              AssertThrow(
+                matrix.m() >= dealii::Utilities::MPI::n_mpi_processes(
+                                composition_.communicator()),
+                dealii::ExcMessage(
+                  "MUMPS requires at least one coupled unknown per MPI rank."));
+              // MUMPS wrappers require contiguous, nonempty solution ownership.
+              mumps_solution_.reinit(
+                dealii::Utilities::MPI::create_evenly_distributed_partitioning(
+                  composition_.communicator(), matrix.m()),
+                composition_.communicator());
+              direct_timer.stop();
+              dealii::TimerOutput::Scope factor_timer(computing_timer,
+                                                      "Factorize Jacobian");
+              mumps_solver_ = std::make_unique<dealii::SparseDirectMUMPS>(
+                dealii::SparseDirectMUMPS::AdditionalData(),
+                composition_.communicator());
+              mumps_solver_->initialize(matrix);
+              pcout << "IDAAdapter: MUMPS factorized " << matrix.m()
+                    << " rows, " << matrix.n_nonzero_elements()
+                    << " matrix entries." << std::endl;
+#  else
+              AssertThrow(
+                false,
+                dealii::ExcMessage(
+                  "The MUMPS solver requires deal.II configured with MUMPS."));
+#  endif
+            }
+        }
+      else if (!solve_)
         {
           const auto keep_snapshot = [snapshot](Operator operator_view) {
             Operator result;
@@ -537,12 +758,18 @@ namespace ImmersX
           };
           if (!composition_.saddle_points().empty())
             {
-              const auto &saddle      = composition_.saddle_points().front();
-              current_preconditioner_ = keep_snapshot(
-                composition_.schur_preconditioner(saddle.multiplier,
-                                                  snapshot->state_storage,
-                                                  &snapshot->derivative_storage,
-                                                  alpha));
+              dealii::TimerOutput::Scope schur_timer(
+                computing_timer, "Build Schur preconditioner");
+              const auto &saddle = composition_.saddle_points().front();
+              current_preconditioner_ =
+                keep_snapshot(composition_.schur_preconditioner(
+                  saddle.multiplier,
+                  snapshot->state_storage,
+                  &snapshot->derivative_storage,
+                  alpha,
+                  1000,
+                  1.e-9,
+                  include_schur_primal_coupling_));
               current_solver_is_flexible_ = true;
             }
           else if (composition_.has_complete_local_preconditioners())
@@ -563,15 +790,21 @@ namespace ImmersX
         }
     }
 
-    Composition                                              composition_;
-    LinearSolveFunction                                      solve_;
-    const TimeIntervalParameters                            &time_parameters_;
-    const IDAParameters                                     &ida_parameters_;
-    mutable std::optional<AdditionalData>                    additional_data_;
-    std::unique_ptr<dealii::SUNDIALS::IDA<GlobalVectorType>> ida_;
-    mutable dealii::ConditionalOStream                       pcout;
-    mutable dealii::TimerOutput                              computing_timer;
-    std::optional<Operator>                                  current_jacobian_;
+    LinearSolver linear_solver_ = LinearSolver::iterative;
+#  ifdef DEAL_II_WITH_MUMPS
+    std::unique_ptr<dealii::SparseDirectMUMPS> mumps_solver_;
+    FieldVectorType                            mumps_solution_;
+#  endif
+    std::unique_ptr<dealii::SparseDirectUMFPACK> direct_solver_;
+    Composition                                  composition_;
+    LinearSolveFunction                          solve_;
+    const TimeIntervalParameters                &time_parameters_;
+    const IDAParameters                         &ida_parameters_;
+    mutable std::optional<AdditionalData>        additional_data_;
+    std::unique_ptr<Compatibility::SUNDIALS::IDA<GlobalVectorType>> ida_;
+    mutable dealii::ConditionalOStream                              pcout;
+    mutable dealii::TimerOutput         computing_timer;
+    std::optional<Operator>             current_jacobian_;
     std::optional<Operator>             current_preconditioner_;
     OutputFunction                      output_;
     ConsistentInitialConditionsFunction compute_consistent_initial_conditions_;
@@ -579,6 +812,7 @@ namespace ImmersX
     GlobalVectorType                   *current_state_              = nullptr;
     bool                                current_solver_is_flexible_ = false;
     bool                                connected_                  = false;
+    bool                                include_schur_primal_coupling_ = false;
   };
 } // namespace ImmersX
 #endif

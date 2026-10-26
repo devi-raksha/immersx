@@ -17,10 +17,19 @@ The introductory sequence is:
 7. [Fiber-reinforced elastodynamics](fiber-reinforced-elastodynamics) — two
    nonmatching Problems and a multiplier constraint.
 
+For the elastostatic–flow project, start with the
+[MetricFlowX coupling onboarding guide](metric-flow-x-elastostatic-onboarding).
+It follows independent runs, file exchange, partitioned iteration, and a
+monolithic `IDAAdapter` formulation, with a work split for two collaborators.
+
 [Navier–Stokes](navier-stokes) documents the independent incompressible-flow
-application. The four [MetricFlowX vessel-wall pages](metric-flow-x-elastodynamics-01-kinematics)
-describe the kinematic, static, spatial manufactured, and transient inputs for
-the same two-way coupling application.
+application. The [MetricFlowX and elastodynamics tutorial](metric-flow-x-elastodynamics)
+shows the parameter-driven two-way vessel-wall coupling. The
+[MetricFlowX and elastodynamics coupling formulation](metric-flow-x-elastodynamics-coupling)
+introduces the coupled equations. The
+[one-vessel manufactured solution](metric-flow-x-elastodynamics-mms) gives
+piecewise analytical fields, an inlet that supplies the changing volume, and
+parameter files for the corrected residual equations.
 
 ```{toctree}
 :maxdepth: 1
@@ -33,8 +42,6 @@ coupled-poisson
 coupled-poisson-elasticity
 fiber-reinforced-elastodynamics
 navier-stokes
-metric-flow-x-elastodynamics-01-kinematics
-metric-flow-x-elastodynamics-02-static-equilibrium
-metric-flow-x-elastodynamics-03-spatial-mms
-metric-flow-x-elastodynamics-04-transient-mms
+metric-flow-x-elastodynamics
+metric-flow-x-elastodynamics-coupling
 ```

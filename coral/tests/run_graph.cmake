@@ -88,9 +88,16 @@ set(_environment
   "THREADS=1"
   "DYLD_LIBRARY_PATH=${CORAL_LIBRARY_DIRECTORY}"
   "LD_LIBRARY_PATH=${CORAL_LIBRARY_DIRECTORY}")
+set(_mpi_command)
+if(DEFINED MPI_RANKS AND MPI_RANKS GREATER 1)
+  if(NOT DEFINED MPIEXEC)
+    message(FATAL_ERROR "MPIEXEC is required for a multi-rank graph")
+  endif()
+  set(_mpi_command "${MPIEXEC}" -np "${MPI_RANKS}")
+endif()
 execute_process(
   COMMAND ${CMAKE_COMMAND} -E env ${_environment}
-          "${CORAL_EXECUTABLE}"
+          ${_mpi_command} "${CORAL_EXECUTABLE}"
           -p "${PLUGIN}" run "${WORKING_DIRECTORY}/${_graph_name}"
           --graph "${WORKING_DIRECTORY}/${_graph_stem}.dot"
   WORKING_DIRECTORY "${WORKING_DIRECTORY}"
@@ -133,6 +140,34 @@ if(DEFINED EXPECTED_PARAMETER_FILE)
         message(FATAL_ERROR
           "Generated Coral parameter file does not contain expected default "
           "marker '${_expected_marker}'")
+      endif()
+    endforeach()
+  endif()
+endif()
+
+if(DEFINED EXPECTED_USED_PARAMETER_FILE)
+  set(_expected_used_parameter_file "${EXPECTED_USED_PARAMETER_FILE}")
+  if(NOT IS_ABSOLUTE "${_expected_used_parameter_file}")
+    set(_expected_used_parameter_file
+      "${WORKING_DIRECTORY}/${_expected_used_parameter_file}")
+  endif()
+  if(NOT EXISTS "${_expected_used_parameter_file}")
+    message(FATAL_ERROR
+      "Coral did not write the used parameter file "
+      "'${_expected_used_parameter_file}'")
+  endif()
+
+  if(DEFINED EXPECTED_USED_PARAMETER_MARKERS)
+    file(READ "${_expected_used_parameter_file}" _used_parameters)
+    string(REPLACE "|" ";" _expected_markers
+                   "${EXPECTED_USED_PARAMETER_MARKERS}")
+    foreach(_expected_marker IN LISTS _expected_markers)
+      string(FIND "${_used_parameters}" "${_expected_marker}"
+             _marker_position)
+      if(_marker_position LESS 0)
+        message(FATAL_ERROR
+          "Coral used parameter file does not contain expected value "
+          "'${_expected_marker}'")
       endif()
     endforeach()
   endif()

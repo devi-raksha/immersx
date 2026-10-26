@@ -77,6 +77,58 @@ The same term API supports same-DoFHandler assembly, paired DoFHandlers, and
 nonmatching lifted geometry. The selected traversal and storage are backend
 choices.
 
+A `Domain` can supply a non-owning cell integration support. `support()` selects
+all active cells, while `support(material_id)` selects cells with that deal.II
+material id. `boundary_support()` selects all boundary ids and
+`boundary_support(id)` selects one id. Attach a support directly or with
+`.on()`:
+
+```cpp
+auto mass = value(u) * test(v) * domain.support(1);
+auto laplace = weak_term(gradient(u), gradient(test(v)))
+                 .on(domain.support());
+auto dGamma = domain.boundary_support(0);
+auto boundary_mass = value(u) * test(v) * dGamma;
+auto normal_flux = gradient(u) * dGamma.normal() * test(v) * dGamma;
+```
+
+The support selects cells or boundary faces and their physical measure. When
+the support is native to a field, matching integrals retain deal.II's native
+`FEValues` or `FEFaceValues` path. A codimension-one support may also provide
+physical quadrature points for a background-to-background trace mass pairing:
+
+```cpp
+auto dGamma = immersed_domain.support();
+auto trace_mass = value(u) * test(u) * dGamma;
+```
+
+Here both DoF spaces belong to the background mesh; the immersed support owns
+only the integration geometry. This path supports value and gradient pairings
+where the trial and test fields share a background triangulation and mapping.
+Geometry-only supports such as `domain.lift(descriptor)` use the same syntax;
+their locally owned physical points and weights define the integration rule.
+Nonlinear composed observables with frozen finite element inputs can use these
+physical supports as well; their residual and Jacobian evaluate at the same
+points on the shared background triangulation.
+It uses deal.II `GridTools::Cache` for
+serial point location and `ParticleCoupling` to route support quadrature points
+to distributed background cells. `FEValues` evaluates the background basis.
+The current support rule uses `QGauss(p + 2)` per support cell and does not split
+at background-cell boundaries, so support-mesh refinement is needed when a
+support cell crosses such a boundary. deal.II does not provide a native
+background-to-background trace-matrix oracle for this independent geometry.
+`normal()` is available when the mesh and fields have the
+same dimension; embedded
+surfaces provide `conormal()`. A planar two-dimensional boundary also provides
+`tangent()`.
+
+Matching cell and boundary terms retain affine source offsets and refresh them
+when the constraints' inhomogeneities change. Nonmatching and lifted linear
+pairings currently require homogeneous source constraints and reject nonzero
+offsets, including changes made after assembly. Linear multiplier reaction rows
+also require homogeneous multiplier constraints. Constraint entries, meshes, and
+mappings must remain fixed for cached matching terms.
+
 A `Constraint` is an Interaction assembled from weak terms with one
 independently defined multiplier field. The multiplier has its own FE space
 and is an algebraic field. The constraint contributes its signed weak-term sum
@@ -89,11 +141,9 @@ auto continuity = make_constraint(
   weak_term(value(v), test(lambda)));
 ```
 
-Other Interactions can own geometry, search, transfer operators, native
-provider access, and auxiliary fields. The `MetricFlowXVesselWallConstraint`
-is one such interaction: it connects a MetricFlowX area field to a nonlinear
-wall displacement observable and sends the wall multiplier back as native
-external pressure.
+Other Interactions can own geometry, search, transfer operators, and auxiliary
+fields. Applications express each coupling through the terms and fields that
+define its residual contribution.
 
 ## Residual and execution adapters
 

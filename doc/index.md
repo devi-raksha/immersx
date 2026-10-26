@@ -16,6 +16,8 @@ want to complete.
   architectural ideas behind the examples.
 - [Look up the reference](reference/index): check executable capabilities,
   parameter groups, and the generated C++ API.
+- [Performance history](performance/index): inspect native comparisons, commit
+  regressions, validation failures, and gaps in benchmark coverage.
 - [Contribute](developer/index): build, test, document, and extend the project.
 
 The [API reference](api/library_root) is generated from the public
@@ -28,11 +30,20 @@ ownership boundaries used throughout the documentation.
 
 getting-started/index
 how-to/index
+how-to/local-co-refinement
+how-to/lifted-poisson
+how-to/lifted-static-elasticity
 tutorials/index
+tutorials/metric-flow-x-elastostatic-onboarding
+tutorials/metric-flow-x-elastodynamics-mms
 concepts/index
 reference/index
 dealiiX-platform/index
 developer/index
-changes/index
+performance/index
+performance/pipeline
+performance/particle-penalty
+performance/metric-flow-x-elastodynamics
+changes
 about/index
 ```

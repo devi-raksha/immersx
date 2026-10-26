@@ -33,8 +33,9 @@ namespace ImmersX
     struct is_weak_term : std::false_type
     {};
 
-    template <typename ObservableType, typename TargetField>
-    struct is_weak_term<WeakTerm<ObservableType, TargetField>> : std::true_type
+    template <typename ObservableType, typename TargetField, typename Support>
+    struct is_weak_term<WeakTerm<ObservableType, TargetField, Support>>
+      : std::true_type
     {};
 
     template <typename Wanted,
@@ -335,7 +336,9 @@ namespace ImmersX
 
     template <typename Builder>
     auto
-    add(Builder &builder) const
+    add(Builder                                       &builder,
+        const typename Builder::Model::MatrixOperator *supplied_metric =
+          nullptr) const
     {
       const auto &multiplier_field = multiplier();
       const auto  multiplier_id =
@@ -352,7 +355,9 @@ namespace ImmersX
             participants.push_back(participant);
       });
       const auto metric =
-        detail::make_multiplier_metric(builder, multiplier_field);
+        supplied_metric != nullptr ?
+          *supplied_metric :
+          detail::make_multiplier_metric(builder, multiplier_field);
       builder.saddle_point(multiplier_id, participants, metric);
 
       std::size_t index = 0;

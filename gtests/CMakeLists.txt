@@ -30,9 +30,13 @@ set(_public_headers
     immersx/core/constraint.h
     immersx/core/contributor.h
     immersx/core/domain.h
+    immersx/grid/local_co_refinement.h
+    immersx/grid/local_co_refinement_parameters.h
     immersx/core/fe_space.h
     immersx/core/field.h
     immersx/core/field_contributor.h
+    immersx/core/integration_support.h
+    immersx/core/lifted_integration_support.h
     immersx/core/input_field_selector.h
     immersx/core/known_term.h
     immersx/core/reduced_field_catalog.h
@@ -42,11 +46,16 @@ set(_public_headers
     immersx/core/state.h
     immersx/core/state_history.h
     immersx/core/sundials_ida_adapter.h
+    immersx/compatibility/dealii_9_9/ida.h
+    immersx/compatibility/dealii_9_9/n_vector.h
+    immersx/compatibility/dealii_9_9/n_vector.templates.h
+    immersx/compatibility/dealii_9_9/utilities.h
     immersx/core/sundials_kinsol_adapter.h
     immersx/core/time_parameters.h
     immersx/core/linear_adapter.h
     immersx/core/matrix_operator.h
     immersx/core/observable.h
+    immersx/core/observable_lift.h
     immersx/core/weak_term.h
     immersx/core/problem_handle.h
     immersx/core/symbolic_field_evaluator.h
@@ -65,10 +74,8 @@ set(_public_headers
     immersx/physics/navier_stokes_semidiscrete.h
     immersx/physics/poisson_residual.h)
 if(IMMERSX_WITH_METRIC_FLOW_X)
-  list(APPEND _public_headers
-       immersx/physics/metric_flow_x.h
-       immersx/physics/metric_flow_x_vessel_wall_observable.h
-       immersx/algebra/metric_flow_x_vessel_wall_constraint.h)
+  list(APPEND _public_headers immersx/physics/metric_flow_x.h
+                             immersx/physics/metric_flow_x_pressure.h)
 endif()
 
 set(_public_header_targets)
@@ -89,8 +96,8 @@ foreach(_build_type ${_d2_build_types})
 
       set(_public_header_target
           "public_header_${_public_header_id}${${_build_type}_postfix}")
-      add_executable(
-        ${_public_header_target}
+      add_library(
+        ${_public_header_target} OBJECT
         "${CMAKE_CURRENT_BINARY_DIR}/public_header_${_public_header_id}.cpp")
       target_include_directories(${_public_header_target}
                                  PRIVATE ${CMAKE_SOURCE_DIR}/include
@@ -100,13 +107,9 @@ foreach(_build_type ${_d2_build_types})
                              $<$<CXX_COMPILER_ID:Clang>:-Wno-cpp>
                              $<$<CXX_COMPILER_ID:GNU>:-Wno-cpp>)
       if(IMMERSX_WITH_METRIC_FLOW_X AND
-         (_public_header STREQUAL "immersx/physics/metric_flow_x.h" OR
-          _public_header STREQUAL
-            "immersx/physics/metric_flow_x_vessel_wall_observable.h" OR
-          _public_header STREQUAL
-            "immersx/algebra/metric_flow_x_vessel_wall_constraint.h"))
+         _public_header MATCHES "^immersx/physics/metric_flow_x")
         target_link_libraries(${_public_header_target}
-                              MetricFlowX::metric_flow_x)
+                              ${IMMERSX_METRIC_FLOW_X_TARGET_${_build_type}})
       endif()
       DEAL_II_SETUP_TARGET(${_public_header_target} ${_BUILD_TYPE})
       list(APPEND _public_header_targets ${_public_header_target})
@@ -126,7 +129,7 @@ foreach(_build_type ${_d2_build_types})
                      --target
                      "immersx_public_header_self_containment_${_build_type_lower}")
     set_tests_properties(${_public_header_test}
-                         PROPERTIES LABELS "unit;quick" TIMEOUT 300)
+                         PROPERTIES LABELS "unit;quick" TIMEOUT 300 RUN_SERIAL TRUE)
   endif()
 endforeach()
 
@@ -170,6 +173,27 @@ FOREACH(_build_type ${_d2_build_types})
     target_include_directories(${_exe} PRIVATE ${GTEST_INCLUDE_DIRS})
     LIST(APPEND IMMERSX_TEST_TARGETS ${_exe})
 
+    add_test(
+      NAME "ImmersX${${_build_type}_ctest_suffix}.TestCategoryCoverage"
+      COMMAND ${CMAKE_COMMAND}
+              "-DTEST_EXECUTABLE=$<TARGET_FILE:${_exe}>"
+              "-DCATEGORY_FILE=${CMAKE_CURRENT_SOURCE_DIR}/test_categories.cmake"
+              -P "${CMAKE_CURRENT_SOURCE_DIR}/check_test_categories.cmake")
+    set_tests_properties(
+      "ImmersX${${_build_type}_ctest_suffix}.TestCategoryCoverage"
+      PROPERTIES LABELS "unit;quick" TIMEOUT 60)
+
+    add_test(
+      NAME "ImmersX${${_build_type}_ctest_suffix}.TestCategoryGuard"
+      COMMAND ${CMAKE_COMMAND}
+              "-DTEST_EXECUTABLE=$<TARGET_FILE:${_exe}>"
+              "-DCATEGORY_FILE=${CMAKE_CURRENT_SOURCE_DIR}/test_categories.cmake"
+              "-DTEST_OUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/category-guard-${_build_type}"
+              -P "${CMAKE_CURRENT_SOURCE_DIR}/test_category_coverage_guard.cmake")
+    set_tests_properties(
+      "ImmersX${${_build_type}_ctest_suffix}.TestCategoryGuard"
+      PROPERTIES LABELS "unit;quick" TIMEOUT 60)
+
     set(_unit_patterns)
     foreach(_suite ${IMMERSX_UNIT_TEST_SUITES})
       list(APPEND _unit_patterns "${_suite}.*")
@@ -192,21 +216,28 @@ FOREACH(_build_type ${_d2_build_types})
     string(JOIN ":" _application_filter ${_application_patterns})
     set(_unit_mpi_suites)
     foreach(_suite ${IMMERSX_UNIT_TEST_SUITES})
-      list(APPEND _unit_mpi_suites "${_suite}.MPI_*")
+      list(APPEND _unit_mpi_suites "${_suite}.MPI_*" "${_suite}.BOTH_*")
     endforeach()
     set(_integration_mpi_suites)
     foreach(_suite ${IMMERSX_INTEGRATION_TEST_SUITES})
-      list(APPEND _integration_mpi_suites "${_suite}.MPI_*")
+      list(APPEND _integration_mpi_suites "${_suite}.MPI_*" "${_suite}.BOTH_*")
     endforeach()
     set(_validation_mpi_suites)
     foreach(_suite ${IMMERSX_VALIDATION_TEST_SUITES})
-      list(APPEND _validation_mpi_suites "${_suite}.MPI_*")
+      list(APPEND _validation_mpi_suites "${_suite}.MPI_*" "${_suite}.BOTH_*")
     endforeach()
     set(_application_mpi_suites)
     foreach(_suite ${IMMERSX_APPLICATION_TEST_SUITES})
-      list(APPEND _application_mpi_suites "${_suite}.MPI_*")
+      list(APPEND _application_mpi_suites "${_suite}.MPI_*" "${_suite}.BOTH_*")
     endforeach()
+    list(APPEND _integration_mpi_suites
+         "ElasticStaticProblem.BOTH_ConfigurableDisplacementSpace")
+    list(APPEND _validation_mpi_suites
+         "FiberReinforcedElastodynamicsValidation.BOTH_ConfigurableMultiplierSpace")
     string(JOIN ":" _unit_mpi_filter ${_unit_mpi_suites})
+    # Local co-refinement uses the same assertions in serial and MPI. Include
+    # its BOTH_ cases in the authoritative integration MPI run.
+    list(APPEND _integration_mpi_suites "LocalCoRefinement.BOTH_*")
     string(JOIN ":" _integration_mpi_filter ${_integration_mpi_suites})
     string(JOIN ":" _validation_mpi_filter ${_validation_mpi_suites})
     string(JOIN ":" _application_mpi_filter ${_application_mpi_suites})
@@ -214,6 +245,8 @@ FOREACH(_build_type ${_d2_build_types})
 
     # One aggregate executable keeps the translation units compiled once.
     # CTest provides the user-facing category and process-count matrix.
+    # Category runs and parameter-driven applications share configured output
+    # paths. Their common lock permits configure-only fixtures to run alongside.
     foreach(_category unit integration validation application)
       set(_category_quick FALSE)
       set(_category_timeout 300)
@@ -230,7 +263,7 @@ FOREACH(_build_type ${_d2_build_types})
         set(_category_filter "${_validation_filter}")
         set(_category_mpi_filter "${_validation_mpi_filter}")
         set(_category_timeout 1200)
-      else()
+      elseif(_category STREQUAL "application")
         set(_category_filter "${_application_filter}")
         set(_category_mpi_filter "${_application_mpi_filter}")
         set(_category_timeout 1200)
@@ -239,26 +272,31 @@ FOREACH(_build_type ${_d2_build_types})
       set(_serial_test
           "ImmersX${${_build_type}_ctest_suffix}.${_category}.Serial")
       add_test(NAME ${_serial_test}
-               COMMAND $<TARGET_FILE:${_exe}>
-                       --gtest_filter=${_category_filter}-*.MPI_*)
+               COMMAND ${CMAKE_COMMAND} -E env
+                       "GTEST_FILTER=${_category_filter}-*.MPI_*"
+                       $<TARGET_FILE:${_exe}>)
       set(_labels "${_category}")
       if(_category_quick)
         list(APPEND _labels quick)
       endif()
       set_tests_properties(${_serial_test}
                            PROPERTIES LABELS "${_labels}"
-                                      TIMEOUT ${_category_timeout})
+                                      TIMEOUT ${_category_timeout}
+                                      RESOURCE_LOCK ImmersX.TestOutput)
 
       if(_immersx_mpiexec)
         set(_mpi_test
             "ImmersX${${_build_type}_ctest_suffix}.${_category}.MPI")
         add_test(NAME ${_mpi_test}
-                 COMMAND ${_immersx_mpiexec} -np 2
-                         $<TARGET_FILE:${_exe}>
-                         --gtest_filter=${_category_mpi_filter})
+                 COMMAND ${CMAKE_COMMAND} -E env
+                         "GTEST_FILTER=${_category_mpi_filter}"
+                         ${_immersx_mpiexec} -np 2
+                         $<TARGET_FILE:${_exe}>)
         set_tests_properties(${_mpi_test}
                              PROPERTIES LABELS "${_labels};mpi"
-                                        TIMEOUT ${_category_timeout})
+                                        TIMEOUT ${_category_timeout}
+                                        PROCESSORS 2
+                                        RESOURCE_LOCK ImmersX.TestOutput)
       endif()
     endforeach()
     IF(IMMERSX_INSTALL_TESTS)
@@ -308,22 +346,77 @@ if(IMMERSX_WITH_METRIC_FLOW_X)
       set(_metric_flow_x_serial_test
           "ImmersX${${_build_type}_ctest_suffix}.integration.MetricFlowX.Serial")
       add_test(NAME ${_metric_flow_x_serial_test}
-               COMMAND $<TARGET_FILE:${_metric_flow_x_test_target}>
-                       --gtest_filter=MetricFlowX.*-*.MPI_*)
+               COMMAND $<TARGET_FILE:${_metric_flow_x_test_target}>)
       set_tests_properties(${_metric_flow_x_serial_test}
-                           PROPERTIES LABELS "integration;quick" TIMEOUT 300)
+                           PROPERTIES LABELS "integration;quick" TIMEOUT 300
+                                      RESOURCE_LOCK ImmersX.TestOutput
+                                      ENVIRONMENT "GTEST_FILTER=MetricFlowX.*-*.MPI_*")
       find_program(_immersx_mpiexec NAMES mpirun mpiexec)
       if(_immersx_mpiexec)
         set(_metric_flow_x_mpi_test
             "ImmersX${${_build_type}_ctest_suffix}.integration.MetricFlowX.MPI")
         add_test(NAME ${_metric_flow_x_mpi_test}
                  COMMAND ${_immersx_mpiexec} -np 2
-                         $<TARGET_FILE:${_metric_flow_x_test_target}>
-                         --gtest_filter=MetricFlowX.MPI_*)
+                         $<TARGET_FILE:${_metric_flow_x_test_target}>)
         set_tests_properties(${_metric_flow_x_mpi_test}
                              PROPERTIES LABELS "integration;quick;mpi"
-                                        TIMEOUT 300)
+                                        TIMEOUT 300 PROCESSORS 2
+                                        RESOURCE_LOCK ImmersX.TestOutput
+                                        ENVIRONMENT "GTEST_FILTER=MetricFlowX.MPI_*:MetricFlowX.BOTH_*")
       endif()
+      foreach(_case Coupled MMS)
+        set(_coupled_modes Serial MPI)
+        if(DEAL_II_WITH_UMFPACK)
+          list(APPEND _coupled_modes SerialUMFPACK)
+        endif()
+        if(DEAL_II_WITH_MUMPS)
+          list(APPEND _coupled_modes SerialMUMPS MPIMUMPS)
+        endif()
+        foreach(_mode IN LISTS _coupled_modes)
+          if((_mode STREQUAL "MPI" OR _mode STREQUAL "MPIMUMPS")
+             AND NOT _immersx_mpiexec)
+            continue()
+          endif()
+          set(_coupled_name
+              "ImmersX${${_build_type}_ctest_suffix}.application.MetricFlowX${_case}.${_mode}")
+          set(_saved_output_dir "${TEST_OUTPUT_DIR}")
+          set(TEST_OUTPUT_DIR "${_saved_output_dir}/${_build_type}/metric-${_case}-${_mode}")
+          set(_coupled_input "${CMAKE_CURRENT_BINARY_DIR}/parameters/metric_${_case}_${_build_type}_${_mode}.prm")
+          if(_case STREQUAL "MMS")
+            set(_coupled_template "${CMAKE_SOURCE_DIR}/tutorials/metric_flow_x_elastodynamics/mms_cube.prm.in")
+          elseif(_case STREQUAL "Coupled")
+            set(_coupled_template "${CMAKE_CURRENT_SOURCE_DIR}/parameters/metric_flow_x_elastodynamics.prm.in")
+          endif()
+          configure_file(
+            "${_coupled_template}"
+            "${_coupled_input}" @ONLY)
+          if(_mode STREQUAL "SerialUMFPACK")
+            file(APPEND "${_coupled_input}"
+              "\nsubsection MetricFlowX coupled solver\n  set Linear solver = umfpack\nend\n")
+          elseif(_mode STREQUAL "SerialMUMPS" OR _mode STREQUAL "MPIMUMPS")
+            file(APPEND "${_coupled_input}"
+              "\nsubsection MetricFlowX coupled solver\n  set Linear solver = mumps\nend\n")
+          endif()
+          set(TEST_OUTPUT_DIR "${_saved_output_dir}")
+          set(_coupled_mpiexec "")
+          set(_coupled_labels "application")
+          if(_mode STREQUAL "MPI" OR _mode STREQUAL "MPIMUMPS")
+            set(_coupled_mpiexec "${_immersx_mpiexec}")
+            set(_coupled_labels "application;mpi")
+          endif()
+          add_test(NAME "${_coupled_name}"
+            COMMAND "${CMAKE_COMMAND}"
+              "-DTEST_EXECUTABLE=$<TARGET_FILE:metric_flow_x_elastodynamics${${_build_type}_postfix}>"
+              "-DPARAMETER_FILE=${_coupled_input}"
+              "-DMPIEXEC=${_coupled_mpiexec}"
+              -P "${CMAKE_CURRENT_SOURCE_DIR}/run_metric_flow_x_coupled.cmake")
+          set_tests_properties("${_coupled_name}" PROPERTIES
+                               TIMEOUT 600 LABELS "${_coupled_labels}")
+          if(_mode STREQUAL "MPI" OR _mode STREQUAL "MPIMUMPS")
+            set_property(TEST "${_coupled_name}" PROPERTY PROCESSORS 2)
+          endif()
+        endforeach()
+      endforeach()
       list(APPEND IMMERSX_TEST_TARGETS ${_metric_flow_x_test_target})
       if(IMMERSX_INSTALL_TESTS)
         install(TARGETS ${_metric_flow_x_test_target}
@@ -332,57 +425,4 @@ if(IMMERSX_WITH_METRIC_FLOW_X)
     endif()
   endforeach()
 
-  # Keep the one-vessel MMS algebra and two-way residual composition as a
-  # small, independently runnable vertical gate. The aggregate gtests
-  # executable filters MPI tests by process count; this target lets CTest
-  # invoke the gate directly.
-  foreach(_build_type ${_d2_build_types})
-    if(_build_type IN_LIST IMMERSX_REQUESTED_BUILD_TYPES)
-      string(TOUPPER "${_build_type}" _BUILD_TYPE)
-      set(_mms_gate_target
-          "metric_flow_x_elastodynamics_mms_verification${${_build_type}_postfix}")
-      add_executable(${_mms_gate_target}
-                     metric_flow_x_vessel_wall_constraint_01.cc
-                     metric_flow_x_elastodynamics_mms_01.cc
-                     metric_flow_x_elastodynamics_mms_driver.cc
-                     mms_convergence_main.cc)
-      target_include_directories(
-        ${_mms_gate_target}
-        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
-                ${CMAKE_SOURCE_DIR}/include
-                ${CMAKE_BINARY_DIR}/include)
-      target_compile_definitions(
-        ${_mms_gate_target}
-        PRIVATE SOURCE_DIR="${IMMERSX_SOURCE_DIR}"
-                IMMERSX_SOURCE_DIR="${IMMERSX_SOURCE_DIR}"
-                IMMERSX_BINARY_DIR="${IMMERSX_BINARY_DIR}"
-                TEST_DATA_DIR="${TEST_DATA_DIR}"
-                TEST_OUTPUT_DIR="${TEST_OUTPUT_DIR}")
-      target_compile_options(
-        ${_mms_gate_target}
-        PRIVATE $<$<CXX_COMPILER_ID:AppleClang>:-Wno-cpp>
-                $<$<CXX_COMPILER_ID:Clang>:-Wno-cpp>
-                $<$<CXX_COMPILER_ID:GNU>:-Wno-cpp>)
-      target_link_libraries(
-        ${_mms_gate_target}
-        ${TEST_LIBRARIES_${_BUILD_TYPE}}
-        ${GTEST_LIBRARIES})
-      target_include_directories(${_mms_gate_target}
-                                 PRIVATE ${GTEST_INCLUDE_DIRS})
-      DEAL_II_SETUP_TARGET(${_mms_gate_target} ${_BUILD_TYPE})
-      find_program(_immersx_mpiexec NAMES mpirun mpiexec)
-      if(_immersx_mpiexec)
-        set(_mms_gate_test
-            "ImmersX${${_build_type}_ctest_suffix}.validation.MetricFlowX.MMS")
-        add_test(
-          NAME ${_mms_gate_test}
-          COMMAND ${_immersx_mpiexec} -np 2
-                  $<TARGET_FILE:${_mms_gate_target}>
-                  --gtest_filter=OneVesselMMS.*:OneVesselMMSDriver.MPI_ActualTwoWayTransientSolve:MetricFlowXVesselWallConstraint.MPI_TwoWayResidualAndPressureSign:MetricFlowXVesselWallConstraint.MPI_TwoWayCompositionResidualSmoke:MetricFlowXVesselWallConstraint.MPI_GenericKinematicCompositionSmoke:MetricFlowXVesselWallConstraint.MPI_FullCoupledJacobianFiniteDifference)
-        set_tests_properties(${_mms_gate_test}
-                             PROPERTIES LABELS "validation;mpi"
-                                        TIMEOUT 1200)
-      endif()
-    endif()
-  endforeach()
 endif()

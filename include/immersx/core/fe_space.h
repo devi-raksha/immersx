@@ -39,6 +39,7 @@
 #include <limits>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -293,7 +294,22 @@ namespace ImmersX
     dealii::ComponentMask
     component_mask() const
     {
-      return finite_element().component_mask(extractor_);
+      if constexpr (std::is_same_v<Extractor,
+                                   dealii::FEValuesExtractors::Vector>)
+        {
+          // FEValuesViews vectors have spacedim components, whereas the FE
+          // component_mask(Vector) overload selects only dim components.
+          const auto first = extractor_.first_vector_component;
+          AssertThrow(first + spacedim <= finite_element().n_components(),
+                      dealii::ExcMessage("The vector field exceeds the FE "
+                                         "component range."));
+          dealii::ComponentMask mask(finite_element().n_components(), false);
+          for (unsigned int c = first; c < first + spacedim; ++c)
+            mask.set(c, true);
+          return mask;
+        }
+      else
+        return finite_element().component_mask(extractor_);
     }
 
     const dealii::IndexSet &
@@ -445,6 +461,10 @@ namespace ImmersX
       , mapping_(&mapping)
       , constraints_(&constraints)
       , locally_relevant_(locally_relevant)
+      , default_locally_relevant_(
+          locally_relevant == nullptr ?
+            dealii::DoFTools::extract_locally_relevant_dofs(dof_handler) :
+            dealii::IndexSet())
     {}
 
     const DoFHandlerType &
@@ -481,7 +501,7 @@ namespace ImmersX
     locally_relevant_dofs() const
     {
       return locally_relevant_ != nullptr ? *locally_relevant_ :
-                                            locally_owned_dofs();
+                                            default_locally_relevant_;
     }
 
     MPI_Comm
@@ -569,6 +589,7 @@ namespace ImmersX
     const MappingType                       *mapping_;
     const dealii::AffineConstraints<double> *constraints_;
     const dealii::IndexSet                  *locally_relevant_;
+    dealii::IndexSet                         default_locally_relevant_;
   };
 
   /** An owning finite-element discretization with a non-owning view API. */

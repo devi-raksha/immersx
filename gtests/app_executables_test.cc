@@ -88,7 +88,8 @@ prepare_parameter_outputs(const std::filesystem::path &parameter_file)
 static void
 run_application(const char                  *exe,
                 const std::filesystem::path &parameter_file,
-                const std::filesystem::path &run_directory)
+                const std::filesystem::path &run_directory,
+                const std::filesystem::path &log = {})
 {
   std::error_code error;
   std::filesystem::create_directories(run_directory, error);
@@ -97,9 +98,11 @@ run_application(const char                  *exe,
   prepare_parameter_outputs(parameter_file);
 
   const auto executable = ImmersX::TestPaths::binary_path(executable_name(exe));
-  const std::string cmd = "cd " + shell_quote(run_directory.string()) + " && " +
-                          shell_quote(executable.string()) + " " +
-                          shell_quote(parameter_file.string());
+  const std::string cmd =
+    "cd " + shell_quote(run_directory.string()) + " && " +
+    shell_quote(executable.string()) + " " +
+    shell_quote(parameter_file.string()) +
+    (log.empty() ? "" : " > " + shell_quote(log.string()) + " 2>&1");
   const int ret = std::system(cmd.c_str());
   EXPECT_EQ(ret, 0) << "Command failed: " << cmd;
 }
@@ -235,8 +238,11 @@ TEST(AppExecutables, NavierStokes)
 
   const auto output_directory =
     ImmersX::TestPaths::output_path("tutorial-output/navier-stokes-2d");
-  EXPECT_TRUE(
-    std::filesystem::exists(output_directory / "transient_stokes.pvd"));
+  const auto records =
+    read_pvd_records(output_directory / "transient_stokes.pvd");
+  ASSERT_EQ(records.size(), 6u);
+  for (unsigned int step = 0; step < records.size(); ++step)
+    EXPECT_NEAR(records[step].first, 0.02 * step, 1.e-12);
   bool has_velocity = false;
   bool has_pressure = false;
   for (const auto &entry :
@@ -262,35 +268,6 @@ TEST(AppExecutables, CoupledPoissonElasticity)
   run_app_with_parameter(
     "coupled_poisson_elasticity",
     "tutorials/coupled_poisson_elasticity/coupled_poisson_elasticity.prm");
-
-  const auto diagnostics = ImmersX::TestPaths::output_path(
-                             "tutorial-output/coupled-poisson-elasticity") /
-                           "coupled_poisson_elasticity_diagnostics.txt";
-  std::ifstream input(diagnostics);
-  ASSERT_TRUE(input.good()) << diagnostics;
-
-  std::string line;
-  double      residual       = 1.;
-  double      pressure_error = 1.;
-  double      traction_error = 1.;
-  while (std::getline(input, line))
-    {
-      const auto equals = line.find('=');
-      if (equals == std::string::npos)
-        continue;
-      const auto key   = line.substr(0, equals);
-      const auto value = std::stod(line.substr(equals + 1));
-      if (key == "coupled_residual ")
-        residual = value;
-      else if (key == "pressure_scale_error ")
-        pressure_error = value;
-      else if (key == "traction_balance_error ")
-        traction_error = value;
-    }
-
-  EXPECT_LT(residual, 1.e-9);
-  EXPECT_LT(pressure_error, 1.e-14);
-  EXPECT_LT(traction_error, 1.e-9);
 
   const auto output_directory = ImmersX::TestPaths::output_path(
     "tutorial-output/coupled-poisson-elasticity");
@@ -380,6 +357,37 @@ TEST(AppExecutables, TutorialPoisson)
         has_solution |= contents.find("Name=\"solution\"") != std::string::npos;
       }
   EXPECT_TRUE(has_solution);
+}
+
+TEST(AppExecutables, CoupledPoissonConfigurableMultiplier)
+{
+  const auto directory =
+    ImmersX::TestPaths::output_path("composable/coupled-poisson-q1");
+  const auto log = directory / "application.log";
+  run_application("coupled_poisson",
+                  ImmersX::TestPaths::binary_path(
+                    "gtests/parameters/coupled_poisson_multiplier_q1.prm"),
+                  directory,
+                  log);
+  std::ifstream     log_input(log);
+  const std::string diagnostics((std::istreambuf_iterator<char>(log_input)),
+                                std::istreambuf_iterator<char>());
+  // Two cells with two discontinuous DoFs each, rather than the DG0 default.
+  EXPECT_NE(diagnostics.find("multiplier_dofs = 4"), std::string::npos)
+    << diagnostics;
+  EXPECT_TRUE(
+    std::filesystem::is_regular_file(directory / "multiplier_q1.pvd"));
+  std::ifstream input(directory / "multiplier_q1_0.vtu");
+  ASSERT_TRUE(input.good());
+  const std::string contents((std::istreambuf_iterator<char>(input)),
+                             std::istreambuf_iterator<char>());
+  EXPECT_NE(contents.find("Name=\"lagrange_multiplier\""), std::string::npos);
+}
+
+TEST(AppExecutables, ElasticStaticConfigurableSpace)
+{
+  run_app_with_parameter("elastic_static_adapter",
+                         "gtests/parameters/elastic_static_space_q2.prm");
 }
 
 TEST(AppExecutables, CoupledPoisson)

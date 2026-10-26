@@ -24,7 +24,15 @@ Run the 2D input with:
 The matrix occupies `[-1,1]^2`. The fiber is an independently meshed line
 inside it. Its ambient vector components still have dimension two, but its FE
 support is one-dimensional. The fiber coefficients are an additive excess
-contribution coupled to the matrix through a line multiplier.
+contribution coupled to the matrix through a line multiplier. A vector Field
+on the line selects all ambient components (`spacedim`), not just the
+one-dimensional support component. Use `field.component_mask()` when passing
+that selection to a native assembler.
+
+The validation tests compare fixed-step backward-Euler coupling with an
+uncoupled dense reference advanced from its own displacement and velocity
+history under the same forcing and time steps. The application advances only
+the coupled state.
 
 The application exposes matrix and fiber velocity fields and creates an
 independent vector multiplier field. The constraint is assembled from
@@ -39,7 +47,19 @@ fiber.velocity       differential
 coupling.lambda      algebraic
 ```
 
-The application registers these contributors with `IDAAdapter`, accepts the
+The multiplier owns a `FiniteElementSpace` on the fiber Domain. By default,
+`Multiplier FE degree = 0` follows the fiber degree; a positive value selects
+an independent continuous degree. To choose another element, set
+`Fiber Reinforced Elastodynamics/Multiplier space/Finite element`, for example
+`FESystem<1>[FE_DGQ<1>(0)^2]` for a cellwise constant 2D vector multiplier.
+An explicit element name overrides `Multiplier FE degree` and must have `dim`
+components. The default `auto` keeps the degree-based behavior. The choice must
+still yield a solvable constraint system; not every trial/multiplier pair is
+stable.
+
+The IDA execution keeps the adapter, field handles, and solver vectors local
+to one solve. It registers the two Problems and their velocity-continuity
+constraint directly with `IDAAdapter`, accepts the
 displacement and velocity fields after accepted steps, and writes the two
 Problem outputs plus the multiplier on its own FE space. The application
 supports `2/2` and `3/3` matrix dimension selections; the fiber is
