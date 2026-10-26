@@ -11,6 +11,8 @@ skeleton in `.github/CHANGELOG_TEMPLATE.md`.
 
 ### Added
 
+- [PR #N](https://github.com/luca-heltai/immersx/pull/N) Solve harmonic matrix-plus-excess-fiber systems in 2D and 3D with independent meshes, real and imaginary displacement-continuity constraints, frequency sweeps, and displacement and multiplier output.
+
 - [PR #N](https://github.com/luca-heltai/immersx/pull/N) Compose harmonic elasticity Problems with `LinearAdapter` using separate real and imaginary displacement Fields, material-dependent damping, and phased body and Neumann loads.
 
 - [PR #277](https://github.com/luca-heltai/immersx/pull/277) Allow local co-refinement to partition embedded cells with their background owners through the `immersed` policy, preserving imported fields on the final partition.

@@ -51,6 +51,7 @@ set(IMMERSX_INTEGRATION_TEST_SUITES
     ElasticityCouplingParticleOutput
     Elastodynamics
     ElasticityFreq
+    FiberReinforcedElasticityFreq
     ImportedFiniteElementFields
     Domain
     LocalCoRefinement

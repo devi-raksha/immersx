@@ -186,6 +186,12 @@ namespace ImmersX
     {
       return par;
     }
+    const parallel::TriangulationBase<dim, spacedim> &
+    triangulation() const
+    {
+      AssertThrow(tria != nullptr, ExcNotInitialized());
+      return *tria;
+    }
     const Mapping<dim, spacedim> &
     mapping() const
     {
