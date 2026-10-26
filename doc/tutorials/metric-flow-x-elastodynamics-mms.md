@@ -25,6 +25,8 @@ The parameter templates are in `tutorials/metric_flow_x_elastodynamics/`:
 | `mms_cube.prm.in` | $4\times16\times16$ | 2 | Single-rank MMS |
 | `mms_cube_refined.prm.in` | $8\times32\times32$ | 4 | Refine both meshes |
 | `mms_cube_mpi.prm.in` | $4\times16\times16$ | 2 | Separate output directories for MPI |
+| `mms_cube_neumann.prm.in` | $4\times16\times16$ | 2 | Exact Neumann traction |
+| `mms_cube_neumann_refined.prm.in` | $8\times32\times32$ | 4 | Exact Neumann traction on refined meshes |
 
 All cases use degree-one elements, an automatically matched multiplier
 space, and the same analytical target. Centerline cells have twice the
@@ -100,6 +102,20 @@ cd build-mms
 mpirun -np 2 ./metric_flow_x_elastodynamics \
   tutorials/metric_flow_x_elastodynamics/mms_cube_mpi.prm
 ```
+
+The default inputs prescribe exact time-dependent Dirichlet data. To run the
+same target with exact Neumann traction, use:
+
+```bash
+./metric_flow_x_elastodynamics \
+  tutorials/metric_flow_x_elastodynamics/mms_cube_neumann.prm
+mpirun -np 2 ./metric_flow_x_elastodynamics \
+  tutorials/metric_flow_x_elastodynamics/mms_cube_neumann_refined.prm
+```
+
+The Neumann variants write to `metric-flow-x-mms-cube-neumann` and
+`metric-flow-x-mms-cube-neumann-refined` below `test_output/`, so they can be
+compared with the Dirichlet runs without replacing their output.
 
 Reconfigure after changing a template. These inputs select one spatial solve
 each; `Number of refinement cycles` does not make this coupled executable
@@ -249,6 +265,22 @@ residual or Jacobian term. The lifted displacement pairing uses
 `with_lifted_affine_updates()` to refresh the contribution of prescribed
 values at each candidate time while retaining the coupling matrix. Constraint
 indices and master entries must remain fixed during the solve.
+
+The Neumann variants instead prescribe the exact outer traction
+$\tau^\star=\sigma(u^\star)n_\Omega$ on every face. They select Neumann
+boundary id zero and leave the Dirichlet ids empty. For $r<R_0$, the stress
+matrix is $t^3\operatorname{diag}(2,4,4)$. For $r>R_0$, its nonzero components are
+
+$$
+\sigma_{yy}=\frac{2t^3R_0^2(z^2-y^2)}{r^4},\qquad
+\sigma_{zz}=-\sigma_{yy},\qquad
+\sigma_{yz}=\sigma_{zy}=-\frac{4t^3R_0^2yz}{r^4}.
+$$
+
+The boundary expression multiplies this matrix by the appropriate cube-face
+normal, using a coordinate tolerance of $10^{-10}$ to identify faces and
+regularizing denominators where the numerator is zero. The transient mass
+operator and zero initial displacement and velocity fix the rigid-body motion.
 
 ## Area and volume supplied by the inlet
 
@@ -407,8 +439,8 @@ when interpreting differences between the two meshes.
 ## Local verification results
 
 The measurements and plots below used exact Neumann traction on all cube
-faces. They predate the time-dependent Dirichlet inputs above and do not
-measure those inputs.
+faces. They correspond to the retained Neumann variants and do not measure the
+time-dependent Dirichlet inputs above.
 
 Runs on 2026-10-22 used deal.II 9.8.0-rc1, MPICH 5.0.1, and an installed
 MetricFlowX package reporting version 0.1.0 with both build variants. The
@@ -471,8 +503,8 @@ norm. The volume defect is the final area integral minus its initial value
 and the exact integrated inlet flow. Physical times come from the multiplier
 series, because the native flow writer's clock remains at zero.
 
-CTest runs this MMS in Debug and Release, in serial and on two ranks. These
-application tests check that integration finishes. Separate integration tests
+CTest runs both boundary variants in Debug and Release, in serial and on two
+ranks. These application tests check that integration finishes. Separate integration tests
 check multiplier row placement, unchanged continuity, the nonlinear
 Jacobian action by finite differences on the single-cell fixture, nonzero
 corrections for tiny right-hand sides, and rejection of failed IDA steps in
