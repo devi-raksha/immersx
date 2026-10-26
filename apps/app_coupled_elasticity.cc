@@ -17,15 +17,15 @@
  * Modified by: Luca Heltai, 2020, Camilla Belponer 2023
  */
 
-#  include <iomanip>
+#include <iomanip>
 
-#  if 1
-#    include <immersx/physics/coupled_elasticity.h>
+#if 1
+#  include <immersx/physics/coupled_elasticity.h>
 
 using namespace ImmersX;
-#  endif
-#  include <immersx/fvm/coupledModel1d.h>
-#  include <immersx/io/utils.h>
+#endif
+#include <immersx/fvm/coupledModel1d.h>
+#include <immersx/io/utils.h>
 
 int
 main(int argc, char *argv[])
@@ -45,14 +45,14 @@ main(int argc, char *argv[])
         prm_file = argv[1];
       else
         prm_file = "parameters.prm";
-        
+
 #ifdef ENABLE_COUPLED_PROBLEMS
-unsigned int                     couplingSampling     = 1;
-      unsigned int                     Pa_to_dyn_conversion = 10;
-      unsigned int                     couplingStart        = 9;
-      unsigned int                     coupling_mode        = 0;
-      double                           baseline_pExt        = 5; // value to test!!
-      
+      unsigned int couplingSampling     = 1;
+      unsigned int Pa_to_dyn_conversion = 10;
+      unsigned int couplingStart        = 9;
+      unsigned int coupling_mode        = 0;
+      double       baseline_pExt        = 5; // value to test!!
+
       if (argc > 2)
         {
           input_file_name = argv[2];
@@ -76,12 +76,15 @@ unsigned int                     couplingSampling     = 1;
               ElasticityProblemParameters<3> par;
               CoupledElasticityProblem<3>    problem3D(par);
               initialize_parameters(prm_file);
-              if ((coupling_mode == 1) && (problem3D.inclusions.cluster_with_segments == true))
-              {
-                coupling_mode = 0;
-                if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
-                  std::cout << "coupling_mode = 1 is incompatible with Cluster inclusions with segments = true, coupling_mode set to 0" << std::endl;
-              }
+              if ((coupling_mode == 1) &&
+                  (problem3D.inclusions.cluster_with_segments == true))
+                {
+                  coupling_mode = 0;
+                  if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+                    std::cout
+                      << "coupling_mode = 1 is incompatible with Cluster inclusions with segments = true, coupling_mode set to 0"
+                      << std::endl;
+                }
               if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
                 {
                   std::cout
@@ -197,7 +200,8 @@ unsigned int                     couplingSampling     = 1;
                         else // if (coupling_mode == 1)
                           {
                             Vector<double> pressure(
-                              problem3D.pressure_at_immersed_surface_at_inclusions);
+                              problem3D
+                                .pressure_at_immersed_surface_at_inclusions);
 
                             // baseline_pExt - pressure
 
@@ -318,13 +322,13 @@ unsigned int                     couplingSampling     = 1;
         }
 
 #endif
-if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
-            std::cout << "Running uncoupled 3D problem" << std::endl;
-          ElasticityProblemParameters<3> par;
-          CoupledElasticityProblem<3>    problem3D(par);
-          initialize_parameters(prm_file);
-          problem3D.run_timestep0();
-          problem3D.run_timestep();
+      if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+        std::cout << "Running uncoupled 3D problem" << std::endl;
+      ElasticityProblemParameters<3> par;
+      CoupledElasticityProblem<3>    problem3D(par);
+      initialize_parameters(prm_file);
+      problem3D.run_timestep0();
+      problem3D.run_timestep();
     }
   catch (std::exception &exc)
     {

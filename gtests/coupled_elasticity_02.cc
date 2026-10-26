@@ -4,7 +4,6 @@
 using namespace ImmersX;
 #include <immersx/io/utils.h>
 #include <immersx/physics/elasticity_problem_parameters.h>
-
 #include <unistd.h>
 
 #include <filesystem>
@@ -257,7 +256,7 @@ namespace
   // `test`. The problem is built before parsing, as in app_coupled_elasticity,
   // so that its Inclusions member reads its parameters too.
   void
-  with_problem(const std::string                                       &text,
+  with_problem(const std::string                                        &text,
                const std::function<void(CoupledElasticityProblem<3> &)> &test)
   {
     ParameterAcceptor::clear();
@@ -339,27 +338,23 @@ TEST(CoupledElasticity, BOTH_PointAndTensorProductAgree)
   // displacement.
   const auto solve = [](const bool point_coupling) {
     std::vector<double> result;
-    with_problem(parameters(point_coupling,
-                            single_cell_grid(),
-                            point_coupling ? "displacement" :
-                                             "displacement, vessel_id"),
-                 [&](auto &problem) {
-                   EXPECT_EQ(problem.par.coupling_type,
-                             point_coupling ? CouplingType::Point :
-                                              CouplingType::TensorProduct);
-                   problem.run_timestep0();
-                   problem.run_timestep();
-                   EXPECT_EQ(problem.n_vessels(), 1u);
+    with_problem(
+      parameters(point_coupling,
+                 single_cell_grid(),
+                 point_coupling ? "displacement" : "displacement, vessel_id"),
+      [&](auto &problem) {
+        EXPECT_EQ(problem.par.coupling_type,
+                  point_coupling ? CouplingType::Point :
+                                   CouplingType::TensorProduct);
+        problem.run_timestep0();
+        problem.run_timestep();
+        EXPECT_EQ(problem.n_vessels(), 1u);
 
-                   const auto pressure =
-                     gather(problem.pressure_at_immersed_surface);
-                   ASSERT_EQ(pressure.size(), 1u);
-                   const auto &u = problem.solution.block(0);
-                   result        = {pressure[0],
-                                    u.l1_norm(),
-                                    u.l2_norm(),
-                                    u.linfty_norm()};
-                 });
+        const auto pressure = gather(problem.pressure_at_immersed_surface);
+        ASSERT_EQ(pressure.size(), 1u);
+        const auto &u = problem.solution.block(0);
+        result = {pressure[0], u.l1_norm(), u.l2_norm(), u.linfty_norm()};
+      });
     return result;
   };
   const auto point  = solve(true);

@@ -221,8 +221,8 @@ namespace ImmersX
         const auto        &fe     = reduced_dh.get_fe();
         const unsigned int n_comp = fe.n_components();
 
-                  AssertThrow(!vessel_index_of_a_cell.empty(),
-                ExcMessage("error in filling the vessels_id #  todo"));
+        AssertThrow(!vessel_index_of_a_cell.empty(),
+                    ExcMessage("error in filling the vessels_id #  todo"));
 
         const auto locally_owned_vessels =
           Utilities::MPI::create_evenly_distributed_partitioning(
@@ -232,7 +232,7 @@ namespace ImmersX
                                             this->mpi_communicator);
         auto &pressure = pressure_at_immersed_surface;
         pressure       = 0;
-        
+
 
         FEValues<1, spacedim> fe_values(
           fe,
@@ -249,7 +249,8 @@ namespace ImmersX
               fe_values.get_function_values(lambda, lambda_values);
               for (unsigned int q = 0; q < fe_values.n_quadrature_points; ++q)
                 for (unsigned int c = 0; c < n_comp; ++c)
-                  pressure[vessel_index_of_a_cell[cell->active_cell_index()]] += lambda_values[q][c] * fe_values.JxW(q);
+                  pressure[vessel_index_of_a_cell[cell->active_cell_index()]] +=
+                    lambda_values[q][c] * fe_values.JxW(q);
             }
         std::vector<double> integral(1, 0.0);
         Utilities::MPI::sum(make_array_view(std::as_const(local_integral)),
@@ -399,8 +400,7 @@ namespace ImmersX
                                        std::to_string(this->cycle));
 
         HDF5::DataSet dataset =
-          file_h5.create_dataset<double>(DATASET_NAME,
-                                         {n_vessels()});
+          file_h5.create_dataset<double>(DATASET_NAME, {n_vessels()});
 
         std::vector<double> data_to_write;
         // std::vector<hsize_t> coordinates;
@@ -457,8 +457,8 @@ namespace ImmersX
 
     this->cycle = 0;
     this->setup_dofs();
-    if (this->uses_tensor_product_coupling())      
-    {
+    if (this->uses_tensor_product_coupling())
+      {
 #ifdef DEAL_II_WITH_VTK
         make_vessel_index_of_a_cell();
 #endif
