@@ -93,6 +93,8 @@ skeleton in `.github/CHANGELOG_TEMPLATE.md`.
 
 ### Changed
 
+- [PR #287](https://github.com/luca-heltai/immersx/pull/287) Refresh eliminated Dirichlet contributions automatically when evaluating supported linear weak-term residuals, reusing the matrix while constraint entries stay fixed. Remove `with_lifted_affine_updates()` from the public API.
+
 - [PR #287](https://github.com/luca-heltai/immersx/pull/287) Write coupled MetricFlowX test and tutorial output in one directory per case, using `solid`, `flow`, and `pressure_jump` filenames.
 
 - [PR #276](https://github.com/luca-heltai/immersx/pull/276) Keep fiber IDA composition and state local to one solve, write the multiplier through semantic output, and move the uncoupled reference solve to validation tests.

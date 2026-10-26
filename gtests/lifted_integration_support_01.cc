@@ -463,11 +463,11 @@ TEST(LiftedIntegrationSupport,
 }
 
 TEST(LiftedIntegrationSupport,
-     BOTH_RejectsChangedStaticAffineConstraintsCollectively)
+     BOTH_RejectsChangedConstraintStructureCollectively)
 {
   ParameterAcceptor::clear();
   LiftedLineFixture             fixture;
-  TensorProductLift<1, 2, 3, 3> geometry("/Static affine lift/");
+  TensorProductLift<1, 2, 3, 3> geometry("/Constraint structure guard/");
   geometry.thickness                     = "0.1";
   geometry.section.selected_coefficients = {0};
   FiniteElementSpace<1, 3> line_space(fixture.domain.triangulation(),
@@ -509,8 +509,10 @@ TEST(LiftedIntegrationSupport,
   view.bind(bulk.id(), state);
   EvaluationContext<V> context(0., view);
   EXPECT_NO_THROW(model.evaluate_row(line.id(), context, residual));
-  if (bulk.locally_owned_dofs().is_element(0))
-    constraints.set_inhomogeneity(0, 0.1);
+  constraints.clear();
+  constraints.reinit(bulk_space.locally_owned_dofs(),
+                     bulk_space.locally_relevant_dofs());
+  constraints.close();
   EXPECT_THROW(model.evaluate_row(line.id(), context, residual), ExceptionBase);
 }
 
@@ -598,7 +600,7 @@ TEST(LiftedIntegrationSupport, BOTH_VectorLiftHangingNodesAndAffineSourceShift)
 }
 
 TEST(LiftedIntegrationSupport,
-     BOTH_VectorLiftExplicitAffineUpdatesAndStructureGuard)
+     BOTH_VectorLiftAutomaticAffineUpdatesAndStructureGuard)
 {
   ParameterAcceptor::clear();
   LiftedLineFixture             fixture;
@@ -631,9 +633,7 @@ TEST(LiftedIntegrationSupport,
   using M           = ImmersXLA::MPI::SparseMatrix;
   SemiDiscreteModel<V, M>   model;
   SemidiscreteBuilder<V, M> builder(layout, model);
-  weak_term(value(bulk), test(lifted))
-    .with_lifted_affine_updates()
-    .add(builder);
+  weak_term(value(bulk), test(lifted)).add(builder);
   V state, residual, expected;
   detail::initialize_weak_vector(state,
                                  bulk.locally_owned_dofs(),
@@ -650,36 +650,50 @@ TEST(LiftedIntegrationSupport,
   EvaluationContext<V> context(0., view);
   model.evaluate_row(line.id(), context, residual);
   EXPECT_DOUBLE_EQ(residual.l2_norm(), 0.);
-  Tensor<1, 3> constant;
-  constant[0] = 0.1;
-  constant[1] = -0.2;
-  constant[2] = 0.3;
-  for (const auto &cell : bulk.dof_handler().active_cell_iterators())
-    if (!cell->is_artificial())
-      {
-        std::vector<types::global_dof_index> indices(
-          cell->get_fe().n_dofs_per_cell());
-        cell->get_dof_indices(indices);
-        for (unsigned int i = 0; i < indices.size(); ++i)
-          constraints.set_inhomogeneity(
-            indices[i],
-            constant[cell->get_fe().system_to_component_index(i).first]);
-      }
-  EXPECT_NO_THROW(model.evaluate_row(line.id(), context, residual));
-  for (const auto &point : lifted.lifted_points())
+  const auto matrix_operator =
+    model.state_matrix_operator(line.id(), bulk.id(), context);
+  ASSERT_TRUE(matrix_operator.has_value());
+  const auto *matrix = matrix_operator->source_matrix();
+  ASSERT_NE(matrix, nullptr);
+  for (const double amplitude : {1., -0.5, 0., 2.})
     {
-      dealii::Vector<double> local(point.dof_indices.size());
-      for (unsigned int i = 0; i < local.size(); ++i)
-        local[i] = point.weight * point.source_basis_values[i] *
-                   (constant * point.mode_vector);
-      line.constraints().distribute_local_to_global(local,
-                                                    point.dof_indices,
-                                                    expected);
+      expected = 0.;
+      Tensor<1, 3> constant;
+      constant[0] = 0.1 * amplitude;
+      constant[1] = -0.2 * amplitude;
+      constant[2] = 0.3 * amplitude;
+      for (const auto &cell : bulk.dof_handler().active_cell_iterators())
+        if (!cell->is_artificial())
+          {
+            std::vector<types::global_dof_index> indices(
+              cell->get_fe().n_dofs_per_cell());
+            cell->get_dof_indices(indices);
+            for (unsigned int i = 0; i < indices.size(); ++i)
+              constraints.set_inhomogeneity(
+                indices[i],
+                constant[cell->get_fe().system_to_component_index(i).first]);
+          }
+      EXPECT_NO_THROW(model.evaluate_row(line.id(), context, residual));
+      for (const auto &point : lifted.lifted_points())
+        {
+          dealii::Vector<double> local(point.dof_indices.size());
+          for (unsigned int i = 0; i < local.size(); ++i)
+            local[i] = point.weight * point.source_basis_values[i] *
+                       (constant * point.mode_vector);
+          line.constraints().distribute_local_to_global(local,
+                                                        point.dof_indices,
+                                                        expected);
+        }
+      expected.compress(VectorOperation::add);
+      if (amplitude != 0.)
+        EXPECT_GT(expected.l2_norm(), 1.e-5);
+      residual -= expected;
+      EXPECT_LT(residual.l2_norm(), 1.e-12);
+      const auto updated_operator =
+        model.state_matrix_operator(line.id(), bulk.id(), context);
+      ASSERT_TRUE(updated_operator.has_value());
+      EXPECT_EQ(updated_operator->source_matrix(), matrix);
     }
-  expected.compress(VectorOperation::add);
-  EXPECT_GT(expected.l2_norm(), 1.e-5);
-  residual -= expected;
-  EXPECT_LT(residual.l2_norm(), 1.e-12);
   // Offsets may change, but an already condensed matrix cannot follow a new
   // set of constraint masters or constrained DoFs.
   constraints.clear();
@@ -738,9 +752,7 @@ TEST(LiftedIntegrationSupport, BOTH_ElastodynamicsMovingDirichlet)
   });
   const auto       lifted    = lift(value(line.fields()), geometry).mode(0);
   adapter.add([&](auto &builder) {
-    weak_term(value(solid.fields().displacement), test(lifted))
-      .with_lifted_affine_updates()
-      .add(builder);
+    weak_term(value(solid.fields().displacement), test(lifted)).add(builder);
     return line.fields();
   });
   auto state     = adapter.make_state();
@@ -753,7 +765,7 @@ TEST(LiftedIntegrationSupport, BOTH_ElastodynamicsMovingDirichlet)
 
   // Every bulk DoF is prescribed. The trace must recover the physical value
   // from the current boundary offsets, even with a zero execution vector.
-  for (const double time : {0.2, 0.4, 0.1})
+  for (const double time : {0.2, 0.4, 0.1, 0., 0.2})
     {
       adapter.solver().setup_jacobian(time, state, state_dot, 1.);
       EXPECT_DOUBLE_EQ(parameters.displacement_boundary.get_time(), time);
@@ -778,7 +790,8 @@ TEST(LiftedIntegrationSupport, BOTH_ElastodynamicsMovingDirichlet)
             local, point.dof_indices, expected);
         }
       expected.compress(VectorOperation::add);
-      EXPECT_GT(expected.l2_norm(), 1.e-6);
+      if (time != 0.)
+        EXPECT_GT(expected.l2_norm(), 1.e-6);
       V error;
       error.reinit(expected);
       error = adapter.field(residual, line.fields());

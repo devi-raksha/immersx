@@ -261,10 +261,10 @@ parameter expressions use $R_0^2/\max(y^2+z^2,R_0^2)$ to encode both branches
 without division by zero.
 
 The elastodynamics contributor updates boundary values before evaluating any
-residual or Jacobian term. The lifted displacement pairing uses
-`with_lifted_affine_updates()` to refresh the contribution of prescribed
-values at each candidate time while retaining the coupling matrix. Constraint
-indices and master entries must remain fixed during the solve.
+residual or Jacobian term. The displacement weak term automatically refreshes
+the contribution of prescribed values at each candidate time while retaining
+the coupling matrix. Constraint indices and master entries must remain fixed
+during the solve.
 
 The Neumann variants instead prescribe the exact outer traction
 $\tau^\star=\sigma(u^\star)n_\Omega$ on every face. They select Neumann
