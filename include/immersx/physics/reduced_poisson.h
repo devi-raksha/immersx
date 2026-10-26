@@ -39,7 +39,6 @@
 #include <deal.II/base/utilities.h>
 
 #include <deal.II/distributed/grid_refinement.h>
-#include <deal.II/distributed/solution_transfer.h>
 #include <deal.II/distributed/tria.h>
 
 #include <deal.II/dofs/dof_handler.h>
@@ -72,6 +71,7 @@
 #include <deal.II/lac/vector.h>
 
 #include <deal.II/numerics/matrix_tools.h>
+#include <deal.II/numerics/solution_transfer.h>
 
 #ifdef MATRIX_FREE_PATH
 #  include <deal.II/matrix_free/operators.h>
@@ -201,7 +201,7 @@ namespace ImmersX
     assemble_poisson_system();
 #else
     void
-                          assemble_rhs();
+    assemble_rhs();
 #endif
     /** Assemble the reduced coupling matrix and right-hand side. */
     void

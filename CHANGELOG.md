@@ -250,6 +250,8 @@ skeleton in `.github/CHANGELOG_TEMPLATE.md`.
 
 ### Build and packaging
 
+- [PR #N](https://github.com/luca-heltai/immersx/pull/N) Use the unified solution-transfer header so legacy applications build with deal.II 9.9.
+
 - [PR #269](https://github.com/luca-heltai/immersx/pull/269) Link each ImmersX variant to the matching MetricFlowX and deal.II libraries in DebugRelease builds, retain compatible legacy single-variant packages, and check generated linkage in CTest.
 - [PR #262](https://github.com/luca-heltai/immersx/pull/262) Include set serialization explicitly for distributed static-elasticity material IDs so the application builds with deal.II 9.7.1 and Boost on Linux.
 
