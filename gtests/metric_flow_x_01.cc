@@ -423,6 +423,28 @@ namespace
     forced *= 0.5 / epsilon;
     forced -= action;
     EXPECT_LT(forced.l2_norm(), 1.e-6 * action.l2_norm() + 1.e-12);
+    // The large momentum rows must not hide an incorrect radius derivative.
+    for (unsigned int block = 0; block < forced.n_blocks(); ++block)
+      EXPECT_LT(forced.block(block).l2_norm(),
+                1.e-6 * action.block(block).l2_norm() + 1.e-13)
+        << "Jacobian mismatch in block " << block;
+
+    auto  capacitor_direction = adapter.make_state();
+    auto &flow_capacitors =
+      adapter.field(capacitor_direction, flow_fields.fields().state);
+    flow_capacitors = 1.;
+    for (const auto component : {Problem::Component::area,
+                                 Problem::Component::velocity,
+                                 Problem::Component::area_trace,
+                                 Problem::Component::velocity_trace})
+      for (const auto index : flow.component_dofs(component))
+        flow_capacitors[index] = 0.;
+    flow_capacitors.compress(VectorOperation::insert);
+    auto capacitor_action = adapter.make_state();
+    adapter.current_jacobian().vmult(capacitor_action, capacitor_direction);
+    EXPECT_LT(
+      adapter.field(capacitor_action, wall.fields().multiplier).l2_norm(),
+      1.e-14);
 
     auto small_rhs = action;
     small_rhs *= 1.e-14;

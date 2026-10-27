@@ -6,6 +6,7 @@
 
 #include <deal.II/dofs/dof_tools.h>
 
+#include <deal.II/fe/fe_dgq.h>
 #include <deal.II/fe/fe_q.h>
 #include <deal.II/fe/fe_system.h>
 
@@ -27,6 +28,7 @@
 #include <immersx/physics/elastodynamics_semidiscrete.h>
 
 #include <algorithm>
+#include <limits>
 #include <numeric>
 #include <set>
 
@@ -869,3 +871,98 @@ TEST(LiftedIntegrationSupport, BOTH_ElastodynamicsMovingDirichlet)
     }
 }
 #endif
+
+TEST(LiftedIntegrationSupport,
+     NonlinearRepresentativeJacobianUsesExecutionIndices)
+{
+  ParameterAcceptor::clear();
+  Triangulation<1, 3> mesh;
+  GridGenerator::hyper_cube(mesh, -1., 1.);
+  FESystem<1, 3>   source_fe(FE_DGQ<1, 3>(1), 2);
+  FE_DGQ<1, 3>     target_fe(2);
+  DoFHandler<1, 3> source_dofs(mesh), target_dofs(mesh);
+  source_dofs.distribute_dofs(source_fe);
+  target_dofs.distribute_dofs(target_fe);
+  AffineConstraints<double> constraints;
+  constraints.close();
+  const auto source_space =
+    fe_space(source_dofs, StaticMappingQ1<1, 3>::mapping, constraints);
+  const auto target_space =
+    fe_space(target_dofs, StaticMappingQ1<1, 3>::mapping, constraints);
+  IndexSet owned(3);
+  owned.add_range(0, 3);
+  using V = ImmersXLA::MPI::Vector;
+  using M = ImmersXLA::MPI::SparseMatrix;
+  StateLayout               layout;
+  SemiDiscreteModel<V, M>   model;
+  SemidiscreteBuilder<V, M> builder(layout, model);
+  const auto                source_id = builder.field("u", owned, owned, owned);
+  const auto target_id = builder.algebraic_field("lambda", owned, owned);
+  std::vector<types::global_dof_index> mapping(
+    source_dofs.n_dofs(), std::numeric_limits<types::global_dof_index>::max());
+  std::vector<types::global_dof_index> native(source_fe.n_dofs_per_cell());
+  source_dofs.begin_active()->get_dof_indices(native);
+  unsigned int active = 0;
+  for (unsigned int j = 0; j < native.size(); ++j)
+    if (source_fe.system_to_component_index(j).first == 0)
+      mapping[native[j]] = active++ == 0 ? 2 : 0;
+  ASSERT_EQ(active, 2u);
+  const auto u =
+    source_space.field(source_id, "u").reindexed("u", owned, owned, mapping);
+  const auto target = target_space.field(target_id, "lambda")
+                        .reindexed("lambda", owned, owned, {2, 1, 0});
+  TensorProductLift<1, 2, 3, 3> geometry("/Reindexed representative lift/");
+  geometry.section.inclusion_degree      = 0;
+  geometry.section.inclusion_type        = "hyper_cube";
+  geometry.section.refinement_level      = 0;
+  geometry.section.selected_coefficients = {0};
+  geometry.section.n_q_points            = 2;
+  geometry.representative_n_q_points     = 3;
+  geometry.thickness                     = "0.25";
+  weak_term(lift(value(u) * value(u), geometry), test(target)).add(builder);
+
+  V state, direction, action, plus_residual, minus_residual;
+  for (auto *vector :
+       {&state, &direction, &action, &plus_residual, &minus_residual})
+    vector->reinit(owned, MPI_COMM_SELF);
+  state[0] = 2.5;
+  state[1] = 99.; // An extra unknown that is not represented by this FE field.
+  state[2] = 1.5;
+  state.compress(VectorOperation::insert);
+  StateView<V> view(layout, 0.);
+  view.bind(source_id, state);
+  const EvaluationContext<V> context(0., view);
+  const auto                 jacobian =
+    model.state_matrix_operator(target_id, source_id, context);
+  ASSERT_TRUE(jacobian.has_value());
+  direction    = 0.;
+  direction[1] = 1.;
+  direction.compress(VectorOperation::insert);
+  jacobian->view.vmult(action, direction);
+  EXPECT_LT(action.l2_norm(), 1.e-14);
+
+  direction[0] = .3;
+  direction[1] = 0.;
+  direction[2] = -.2;
+  direction.compress(VectorOperation::insert);
+  jacobian->view.vmult(action, direction);
+  EXPECT_GT(action.l2_norm(), 1.e-8);
+  constexpr double epsilon = 1.e-6;
+  auto             plus    = state;
+  auto             minus   = state;
+  plus.add(epsilon, direction);
+  minus.add(-epsilon, direction);
+  StateView<V> plus_view(layout, 0.), minus_view(layout, 0.);
+  plus_view.bind(source_id, plus);
+  minus_view.bind(source_id, minus);
+  model.evaluate_row(target_id,
+                     EvaluationContext<V>(0., plus_view),
+                     plus_residual);
+  model.evaluate_row(target_id,
+                     EvaluationContext<V>(0., minus_view),
+                     minus_residual);
+  plus_residual -= minus_residual;
+  plus_residual *= .5 / epsilon;
+  plus_residual -= action;
+  EXPECT_LT(plus_residual.l2_norm(), 1.e-7 * action.l2_norm() + 1.e-12);
+}

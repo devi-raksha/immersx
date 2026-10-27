@@ -3502,9 +3502,9 @@ namespace ImmersX
           if (cell->is_locally_owned())
             {
               cell->get_dof_indices(target_indices);
-              const auto source_cell =
-                cell->as_dof_handler_iterator(source.dof_handler());
-              source_cell->get_dof_indices(column_indices);
+              const auto column_cell =
+                cell->as_dof_handler_iterator(column_source.dof_handler());
+              column_cell->get_dof_indices(column_indices);
               std::vector<dealii::types::global_dof_index> rows;
               rows.reserve(target_indices.size());
               for (const auto index : target_indices)
@@ -3514,12 +3514,13 @@ namespace ImmersX
                                dealii::types::global_dof_index>::max())
                     rows.push_back(row);
                 }
+              std::vector<dealii::types::global_dof_index> columns;
+              columns.reserve(column_indices.size());
+              for (const auto index : column_indices)
+                if (column_source.has_execution_index(index))
+                  columns.push_back(column_source.execution_index(index));
               target_field.constraints().add_entries_local_to_global(
-                rows,
-                column_source.constraints(),
-                column_indices,
-                sparsity,
-                true);
+                rows, column_source.constraints(), columns, sparsity, true);
             }
 
         if (dynamic_cast<const dealii::parallel::TriangulationBase<
@@ -3546,9 +3547,9 @@ namespace ImmersX
           if (cell->is_locally_owned())
             {
               cell->get_dof_indices(target_indices);
-              const auto source_cell =
-                cell->as_dof_handler_iterator(source.dof_handler());
-              source_cell->get_dof_indices(column_indices);
+              const auto column_cell =
+                cell->as_dof_handler_iterator(column_source.dof_handler());
+              column_cell->get_dof_indices(column_indices);
               std::vector<unsigned int>                    active_rows;
               std::vector<dealii::types::global_dof_index> rows;
               for (unsigned int i = 0; i < target_indices.size(); ++i)
@@ -3559,27 +3560,36 @@ namespace ImmersX
                     rows.push_back(
                       target_field.execution_index(target_indices[i]));
                   }
+              std::vector<unsigned int>                    active_columns;
+              std::vector<dealii::types::global_dof_index> columns;
+              for (unsigned int j = 0; j < column_indices.size(); ++j)
+                if (column_source.has_execution_index(column_indices[j]))
+                  {
+                    active_columns.push_back(j);
+                    columns.push_back(
+                      column_source.execution_index(column_indices[j]));
+                  }
               dealii::FullMatrix<double> local(active_rows.size(),
-                                               column_indices.size());
+                                               active_columns.size());
               for (std::size_t q = 0; q < points.size(); ++q)
                 if (points[q].source_entity_id ==
                     cell->global_active_cell_index())
                   {
                     const auto basis = target_basis(target, cell, points[q]);
                     for (unsigned int row = 0; row < active_rows.size(); ++row)
-                      for (unsigned int j = 0; j < column_indices.size(); ++j)
+                      for (unsigned int j = 0; j < active_columns.size(); ++j)
                         local(row, j) +=
                           target.scale() *
-                          radial_value(
-                            observable.linearize_point(context, field, q, j),
-                            points[q]) *
+                          radial_value(observable.linearize_point(
+                                         context, field, q, active_columns[j]),
+                                       points[q]) *
                           basis[active_rows[row]] * points[q].weight;
                   }
               target_field.constraints().distribute_local_to_global(
                 local,
                 rows,
                 column_source.constraints(),
-                column_indices,
+                columns,
                 *result.matrix);
             }
         compress_weak_matrix(*result.matrix);
