@@ -54,9 +54,10 @@ end
 ```
 
 On simplex meshes the solver uses `FE_SimplexP`, `QGaussSimplex`, and a linear
-`MappingFE`; meshes that mix simplex and hypercube cells are rejected. The
-fullydistributed triangulation cannot be refined, so `Initial refinement` and
-`Number of refinement cycles` must stay at their minimum values. The
+`MappingFE`; meshes that mix simplex and hypercube cells are rejected.
+`Initial refinement` refines the mesh before it is distributed. The
+fullydistributed triangulation cannot be refined afterwards, so
+`Number of refinement cycles` must stay at 1. The
 `ParsedConvergenceTable` error integration supports only hypercube cells:
 `run()` skips the error table on simplex meshes and `compute_error()` throws.
 `gtests/elastodynamics_simplex_01.cc` runs a 48-tetrahedron cube from

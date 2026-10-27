@@ -36,7 +36,8 @@ using namespace ImmersX;
 
 namespace
 {
-  const std::string g = "0.1*x+0.2*y+0.01; 0.3*y-0.1*z-0.02; 0.2*x+0.1*z+0.03";
+  const std::string linear_field =
+    "0.1*x+0.2*y+0.01; 0.3*y-0.1*z-0.02; 0.2*x+0.1*z+0.03";
 
   std::string
   scaled(const std::string &factor)
@@ -127,12 +128,12 @@ namespace
           end
           subsection Initial displacement
             set Function expression = )" +
-      g + R"(
+      linear_field + R"(
             set Variable names = x,y,z,t
           end
           subsection Initial velocity
             set Function expression = )" +
-      g + R"(
+      linear_field + R"(
             set Variable names = x,y,z,t
           end
           subsection Exact solution
@@ -167,7 +168,7 @@ namespace
 } // namespace
 
 
-TEST(ElastodynamicsValidation, BOTH_LinearFieldIsExactOnSimplexMesh)
+TEST(Elastodynamics, BOTH_LinearFieldIsExactOnSimplexMesh)
 {
   ParameterAcceptor::clear();
   ElastodynamicsParameters<3> parameters;
@@ -187,7 +188,7 @@ TEST(ElastodynamicsValidation, BOTH_LinearFieldIsExactOnSimplexMesh)
 }
 
 
-TEST(ElastodynamicsValidation, BOTH_LinearFieldIsExactOnHypercubeMesh)
+TEST(Elastodynamics, BOTH_LinearFieldIsExactOnHypercubeMesh)
 {
   ParameterAcceptor::clear();
   ElastodynamicsParameters<3> parameters;

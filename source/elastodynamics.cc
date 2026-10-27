@@ -261,6 +261,7 @@ namespace ImmersX
         face_quadrature = std::make_unique<QGauss<dim - 1>>(par.fe_degree + 1);
         mapping_storage = std::make_unique<MappingQ<dim, spacedim>>(1);
       }
+    // Line meshes are hypercube meshes, so only dim > 1 reaches this branch.
     else if constexpr (dim > 1)
       {
         AssertThrow(tria->all_reference_cells_are_simplex(),
