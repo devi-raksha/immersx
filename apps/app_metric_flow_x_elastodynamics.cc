@@ -63,10 +63,11 @@ namespace
     using WallLift     = TensorProductLift<1, 2, 3, 3>;
 
     ParameterAcceptor::clear();
-    FlowProblem                 flow_problem(MPI_COMM_WORLD);
-    TimeIntervalParameters      flow_time;
-    FixedStepParameters         fixed_step;
-    IDAParameters               ida_parameters;
+    FlowProblem            flow_problem(MPI_COMM_WORLD);
+    TimeIntervalParameters flow_time("/", false);
+    FixedStepParameters    fixed_step("/", false);
+    IDAParameters ida_parameters("/MetricFlowSystem<1, 3>/IDA parameters/",
+                                 &flow_time);
     ElastodynamicsParameters<3> solid_parameters("/Elastodynamics/",
                                                  &flow_time,
                                                  &fixed_step,
@@ -75,10 +76,11 @@ namespace
     FiniteElementSpaceParameters<1, 3> lambda_parameters(
       "/MetricFlowX multiplier space/", "auto");
 
-    ParameterAcceptor coupled_solver("/MetricFlowX coupled solver/");
-    std::string       linear_solver = "iterative";
+    ParameterAcceptor coupled_solver(
+      "/MetricFlowSystem<1, 3>/IDA parameters/Linear solver/");
+    std::string linear_solver = "iterative";
     coupled_solver.add_parameter(
-      "Linear solver",
+      "Type",
       linear_solver,
       "Coupled IDA linear solver. Direct solvers materialize each Jacobian. UMFPACK requires one rank; MUMPS supports MPI.",
       ParameterAcceptor::prm,
