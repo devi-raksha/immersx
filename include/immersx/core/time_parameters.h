@@ -30,9 +30,14 @@ namespace ImmersX
   class TimeIntervalParameters : public dealii::ParameterAcceptor
   {
   public:
+    /** Set expose_parameters to false when IDAParameters registers this
+     * interval in its own native IDA section.
+     */
     explicit TimeIntervalParameters(
-      const std::string &subsection = "/Time interval/")
-      : dealii::ParameterAcceptor(subsection)
+      const std::string &subsection        = "/Time interval/",
+      const bool         expose_parameters = true)
+      : dealii::ParameterAcceptor(expose_parameters ? subsection : "/")
+      , expose_parameters_(expose_parameters)
     {
       parse_parameters_call_back.connect([this]() {
         AssertThrow(final_time >= initial_time,
@@ -53,6 +58,8 @@ namespace ImmersX
     void
     declare_parameters(dealii::ParameterHandler &prm) override
     {
+      if (!expose_parameters_)
+        return;
       prm.add_parameter("Initial time", initial_time);
       prm.add_parameter("Final time", final_time);
       prm.add_parameter("Output time interval",
@@ -60,14 +67,20 @@ namespace ImmersX
                         "Physical time between accepted output states",
                         dealii::Patterns::Double(0));
     }
+
+  private:
+    const bool expose_parameters_;
   };
 
   /** Fixed-step integration policy for applications that do not use IDA. */
   class FixedStepParameters : public dealii::ParameterAcceptor
   {
   public:
-    explicit FixedStepParameters(const std::string &subsection = "/Fixed step/")
-      : dealii::ParameterAcceptor(subsection)
+    /** Set expose_parameters to false for an IDA-only execution path. */
+    explicit FixedStepParameters(const std::string &subsection = "/Fixed step/",
+                                 const bool         expose_parameters = true)
+      : dealii::ParameterAcceptor(expose_parameters ? subsection : "/")
+      , expose_parameters_(expose_parameters)
     {}
 
     double       time_step          = 1.e-2;
@@ -79,6 +92,8 @@ namespace ImmersX
     void
     declare_parameters(dealii::ParameterHandler &prm) override
     {
+      if (!expose_parameters_)
+        return;
       prm.add_parameter("Time step",
                         time_step,
                         "Fixed timestep used by the integrator",
@@ -96,6 +111,9 @@ namespace ImmersX
         dealii::Patterns::Selection("backward_euler|trapezoidal"));
       prm.add_parameter("Refine time step", refine_time_step);
     }
+
+  private:
+    const bool expose_parameters_;
   };
 
   /** IDA-specific adaptive integration and nonlinear-solver controls. */
@@ -111,8 +129,13 @@ namespace ImmersX
     using Controls =
       Compatibility::SUNDIALS::IDA<dealii::Vector<double>>::AdditionalData;
 #endif
-    explicit IDAParameters(const std::string &subsection = "/IDA/")
+    /** Pass an unexposed interval to register native IDA time entries here.
+     * Keep the interval alive while this object or its bindings are used.
+     */
+    explicit IDAParameters(const std::string      &subsection      = "/IDA/",
+                           TimeIntervalParameters *shared_interval = nullptr)
       : dealii::ParameterAcceptor(subsection)
+      , shared_interval_(shared_interval)
     {
 #ifdef DEAL_II_WITH_SUNDIALS
       // Preserve the adapter defaults used by existing parameter files.
@@ -201,7 +224,19 @@ namespace ImmersX
     declare_parameters(dealii::ParameterHandler &prm) override
     {
 #ifdef DEAL_II_WITH_SUNDIALS
-      Controls::add_parameters(prm, false, false);
+      if (shared_interval_ != nullptr)
+        {
+          prm.add_parameter("Initial time", shared_interval_->initial_time);
+          prm.add_parameter("Final time", shared_interval_->final_time);
+          prm.add_parameter("Time interval between each output",
+                            shared_interval_->output_time_interval);
+          // A native solver may already have bound these same entries.
+          for (const auto &entry : {"Initial time",
+                                    "Final time",
+                                    "Time interval between each output"})
+            prm.set(entry, prm.get(entry));
+        }
+      Controls::add_parameters(prm, false, false, shared_interval_ != nullptr);
       tolerance_ramp.add_parameters(prm);
       prm.add_parameter("Print current statistics", print_statistics);
       prm.enter_subsection("Initial condition correction parameters");
@@ -215,11 +250,18 @@ namespace ImmersX
                         "",
                         dealii::Patterns::Selection(
                           "none|use_y_diff|use_y_dot"));
+      if (shared_interval_ != nullptr)
+        for (const auto &entry : {"Correction type at initial time",
+                                  "Correction type after restart"})
+          prm.set(entry, prm.get(entry));
       prm.leave_subsection();
 #else
       (void)prm;
 #endif
     }
+
+  private:
+    TimeIntervalParameters *shared_interval_;
   };
 
   /** Legacy configuration retained only by the production elasticity path. */

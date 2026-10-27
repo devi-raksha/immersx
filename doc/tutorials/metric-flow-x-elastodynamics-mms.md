@@ -119,14 +119,20 @@ compared with the Dirichlet runs without replacing their output.
 
 Reconfigure after changing a template. These inputs select one spatial solve
 each; `Number of refinement cycles` does not make this coupled executable
-perform a convergence study. IDA controls its own time steps. `Fixed step`
-parameters do not set the IDA step size.
+perform a convergence study. Configure the integration interval and adaptive
+IDA controls in `MetricFlowSystem<1, 3>/IDA parameters`, as in the
+[two-way example](metric-flow-x-elastodynamics). The coupled application does
+not declare a `Fixed step` section.
 
 For a serial run, select a sparse direct solve with:
 
 ```text
-subsection MetricFlowX coupled solver
-  set Linear solver = umfpack
+subsection MetricFlowSystem<1, 3>
+  subsection IDA parameters
+    subsection Linear solver
+      set Type = umfpack
+    end
+  end
 end
 ```
 
@@ -144,7 +150,7 @@ columns. This path is intended for small serial verification problems. See the
 [cost analysis and profiling report](../performance/metric-flow-x-elastodynamics)
 for measured setup and solve costs.
 
-For a distributed direct solve, select `Linear solver = mumps`. This uses
+For a distributed direct solve, select `Linear solver/Type = mumps`. This uses
 `dealii::SparseDirectMUMPS` directly and requires `DEAL_II_WITH_MUMPS` in the
 deal.II configuration. Run the generated example with:
 

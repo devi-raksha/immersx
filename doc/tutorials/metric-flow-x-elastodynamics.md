@@ -47,6 +47,44 @@ build/metric_flow_x_elastodynamics_debug \
   build/tutorials/metric_flow_x_elastodynamics/two_way.prm
 ```
 
+Both the standalone `metric_flow_x` application and this coupled application
+use MetricFlowX's native IDA section for time bounds, output cadence, solver
+controls, and tolerance ramps:
+
+```text
+subsection MetricFlowSystem<1, 3>
+  subsection IDA parameters
+    set Initial time = 0
+    set Final time = 0.02
+    set Time interval between each output = 0.01
+    subsection Running parameters
+      set Initial step size = 0.001
+      set Maximum order of BDF = 2
+    end
+    subsection Error control
+      set Absolute error tolerance = 1e-6
+      set Relative error tolerance = 1e-5
+    end
+  end
+end
+```
+
+`Initial step size` controls the adaptive integrator's first step.
+`Time interval between each output` controls the shared flow, solid, and
+multiplier output callbacks. MetricFlowX's separate `Output time interval`
+entry is an optional flow-file throttle; its default zero writes at every
+shared callback.
+
+Migrate older ImmersX inputs by moving `/IDA/` or
+`/MetricFlowSystem<1, 3>/IDA/` into this section. Move the entries from
+`Time interval` into the same section and rename `Output time interval` to
+`Time interval between each output`. Remove `Fixed step`; this IDA-only
+application no longer declares it. Move the old `MetricFlowX coupled solver`
+selection to `IDA parameters/Linear solver/Type` (`iterative`, `umfpack`, or
+`mumps`). The solid shares the same time interval
+and IDA configuration. The IDA controls also include initial-condition
+correction, nonlinear and linear solver options, and the startup tolerance ramp.
+
 The wall relation is imposed weakly. With (A) the flow area, (A_0) its
 reference area, (u) the solid displacement, (n) the radial direction and
 (lambda) the pressure-jump multiplier, the lifted kinematic row represents

@@ -8,9 +8,11 @@
 
 #include <cmath>
 #include <limits>
+#include <sstream>
 #include <stdexcept>
 
 #ifdef DEAL_II_WITH_SUNDIALS
+#  include <deal.II/sundials/ida.h>
 namespace
 {
   using namespace ImmersX;
@@ -261,6 +263,76 @@ TEST(DistributedIDA, BOTH_WeightCallbackFailureDuringInitialization)
     throw std::runtime_error("weight callback failure");
   };
   EXPECT_THROW(adapter.solve(y, yp), std::runtime_error);
+}
+
+TEST(DistributedIDA, SharedNativeParameterSection)
+{
+  using namespace dealii;
+  ParameterAcceptor::clear();
+  auto &prm = ParameterAcceptor::prm;
+  SUNDIALS::IDA<dealii::Vector<double>>::AdditionalData native;
+  prm.enter_subsection("MetricFlowSystem<1, 3>");
+  prm.enter_subsection("IDA parameters");
+  native.add_parameters(prm);
+  prm.leave_subsection();
+  prm.leave_subsection();
+  TimeIntervalParameters time("/", false);
+  FixedStepParameters    step("/", false);
+  IDAParameters          ida("/MetricFlowSystem<1, 3>/IDA parameters/", &time);
+  ParameterAcceptor::declare_all_parameters(prm);
+  EXPECT_DOUBLE_EQ(native.final_time, time.final_time);
+  EXPECT_DOUBLE_EQ(native.output_period, time.output_time_interval);
+  EXPECT_EQ(native.maximum_order, ida.maximum_order);
+  EXPECT_DOUBLE_EQ(native.absolute_tolerance, ida.absolute_tolerance);
+  EXPECT_EQ(native.ic_type, decltype(native)::none);
+  prm.parse_input_from_string(R"(
+    subsection MetricFlowSystem<1, 3>
+      subsection IDA parameters
+        set Initial time = 2.5
+        set Final time = 2.75
+        set Time interval between each output = 0.125
+        subsection Running parameters
+          set Initial step size = 0.002
+          set Maximum order of BDF = 2
+        end
+        subsection Error control
+          set Absolute error tolerance = 1e-7
+          set Relative error tolerance = 2e-6
+        end
+        subsection Initial condition correction parameters
+          set Correction type at initial time = use_y_diff
+        end
+      end
+    end
+  )");
+  ParameterAcceptor::parse_all_parameters(prm);
+  const auto data = ida.additional_data<GlobalVector>(time);
+  EXPECT_DOUBLE_EQ(time.initial_time, 2.5);
+  EXPECT_DOUBLE_EQ(data.initial_time, native.initial_time);
+  EXPECT_DOUBLE_EQ(data.final_time, native.final_time);
+  EXPECT_DOUBLE_EQ(data.final_time, 2.75);
+  EXPECT_DOUBLE_EQ(data.output_period, native.output_period);
+  EXPECT_DOUBLE_EQ(data.output_period, 0.125);
+  EXPECT_DOUBLE_EQ(data.initial_step_size, native.initial_step_size);
+  EXPECT_DOUBLE_EQ(data.initial_step_size, 0.002);
+  EXPECT_EQ(data.maximum_order, 2u);
+  EXPECT_EQ(data.maximum_order, native.maximum_order);
+  EXPECT_DOUBLE_EQ(data.absolute_tolerance, 1.e-7);
+  EXPECT_DOUBLE_EQ(data.absolute_tolerance, native.absolute_tolerance);
+  EXPECT_DOUBLE_EQ(data.relative_tolerance, 2.e-6);
+  EXPECT_EQ(data.ic_type, decltype(data)::use_y_diff);
+  EXPECT_EQ(native.ic_type, decltype(native)::use_y_diff);
+  std::ostringstream output;
+  prm.print_parameters(output, ParameterHandler::PRM | ParameterHandler::Short);
+  const auto text = output.str();
+  EXPECT_EQ(text.find("subsection Time interval"), std::string::npos);
+  EXPECT_EQ(text.find("subsection Fixed step"), std::string::npos);
+  EXPECT_EQ(text.find("subsection IDA\n"), std::string::npos);
+  const auto section = text.find("subsection IDA parameters");
+  ASSERT_NE(section, std::string::npos);
+  EXPECT_EQ(text.find("subsection IDA parameters", section + 1),
+            std::string::npos);
+  ParameterAcceptor::clear();
 }
 
 TEST(DistributedIDA, RampParameterValidation)
