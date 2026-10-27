@@ -1261,7 +1261,7 @@ namespace ImmersX
   void
   ElastodynamicsSolver<dim, spacedim>::compute_error() const
   {
-    // ParsedConvergenceTable integrates with QGauss.
+    // ParsedConvergenceTable::error_from_exact() integrates with QGauss.
     AssertThrow(tria->all_reference_cells_are_hyper_cube(),
                 ExcMessage("compute_error() supports hypercube meshes only."));
     par.exact_solution.set_time(current_time_storage);
@@ -1447,13 +1447,15 @@ namespace ImmersX
         cycles_and_solutions.clear();
         run_time_integration();
 
-        par.exact_solution.set_time(current_time_storage);
-        par.convergence_table.error_from_exact(dh,
-                                               locally_relevant_displacement,
-                                               par.exact_solution);
-
-        if (pcout.is_active())
-          par.convergence_table.output_table(pcout.get_stream());
+        if (tria->all_reference_cells_are_hyper_cube())
+          {
+            compute_error();
+            if (pcout.is_active())
+              par.convergence_table.output_table(pcout.get_stream());
+          }
+        else
+          pcout << "   Error table skipped: not available on simplex meshes."
+                << std::endl;
 
         if (refinement_cycle_storage + 1 < par.n_refinement_cycles)
           refine_global();
