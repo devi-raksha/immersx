@@ -254,167 +254,203 @@ TEST(MetricFlowX, BOTH_NativeStateInitializesPositiveArea)
   EXPECT_GT(dealii::Utilities::MPI::min(minimum_area, MPI_COMM_WORLD), 0.);
 }
 
+namespace
+{
+  void
+  check_wall_traction(const std::string &parameter_file,
+                      const std::string &vessel_file)
+  {
+    using namespace dealii;
+    using namespace ImmersX;
+    ParameterAcceptor::clear();
+    Problem                flow(MPI_COMM_WORLD);
+    TimeIntervalParameters time("/", false);
+    FixedStepParameters    step("/", false);
+    IDAParameters ida("/MetricFlowSystem<1, 3>/IDA parameters/", &time);
+    ElastodynamicsParameters<3>        parameters("/Elastodynamics/",
+                                           &time,
+                                           &step,
+                                           &ida);
+    TensorProductLift<1, 2, 3, 3>      lift("/MetricFlowX vessel wall lift/");
+    FiniteElementSpaceParameters<1, 3> multiplier_parameters(
+      "/MetricFlowX multiplier space/", "FE_DGQ(2)");
+    ParameterAcceptor coupling_parameters("/MetricFlowX coupling/");
+    std::string       partitioning_policy = "default";
+    coupling_parameters.add_parameter("Embedded partitioning policy",
+                                      partitioning_policy);
+    const auto input = TestPaths::parameter_path(parameter_file);
+    initialize_parameters(input);
+    flow.initialize_params(input);
+    flow.setup();
+    multiplier_parameters.finite_element = "FE_DGQ(2)";
+    ElastodynamicsSolver<3> solid(parameters);
+    solid.make_grid();
+    solid.setup_fe();
+    solid.setup_system();
+    solid.assemble_operators();
+    solid.set_initial_conditions();
+    FiniteElementSpace<1, 3> multiplier_space(flow.triangulation(),
+                                              multiplier_parameters);
+    const auto               multiplier_view = multiplier_space.view();
+    const auto               multiplier      = multiplier_view.field("lambda");
+    ImportedFiniteElementFields<1, 3> imported(TestPaths::data_filename(
+                                                 vessel_file),
+                                               flow.triangulation(),
+                                               MPI_COMM_WORLD);
+    const auto                        a0 = imported.field("a0");
+    const auto A0 = frozen(a0.field(), a0.coefficients());
+    Adapter    adapter(time, ida, MPI_COMM_WORLD);
+    adapter.set_schur_primal_coupling();
+    const auto solid_fields = adapter.add(solid, "solid");
+    const auto flow_fields  = adapter.add(metric_flow_x(flow), "flow");
+    const auto wall         = adapter.add(
+      [&](auto &builder) {
+        const auto id =
+          builder.algebraic_field(multiplier.name(),
+                                  multiplier.locally_owned_dofs(),
+                                  multiplier.locally_relevant_dofs());
+        const auto lambda      = multiplier.with_id(id);
+        const auto radius      = sqrt(A0 / numbers::PI);
+        const auto lambda_wall = ImmersX::lift(value(lambda), lift, radius);
+        const auto negative_wall_displacement =
+          ImmersX::lift(radius -
+                          sqrt(value(flow_fields.fields().area) / numbers::PI),
+                        lift,
+                        radius);
+        weak_term(value(solid_fields.fields().displacement), test(lambda_wall))
+          .add(builder);
+        weak_term(negative_wall_displacement, test(lambda)).add(builder);
+        weak_term(lambda_wall, test(solid_fields.fields().velocity))
+          .add(builder);
+        const auto pressure      = -1. * value(lambda);
+        const auto flow_id       = flow_fields.fields().state;
+        auto       pressure_term = builder.term(flow_id, "native-pressure");
+        pressure_term.residual([&, pressure, flow_id, id](const auto &context) {
+          auto contribution = std::make_shared<FieldVector>(flow.make_state());
+          *contribution     = 0.;
+          flow.add_external_pressure_residual(
+            context.time(),
+            context.state(flow_id),
+            metric_flow_x_pressure_provider(pressure, context.state(id)),
+            *contribution);
+          PackagedOperation<FieldVector> result;
+          result.reinit_vector = [&flow](auto &dst, const bool) {
+            flow.reinit_state(dst);
+          };
+          result.apply     = [contribution](auto &dst) { dst = *contribution; };
+          result.apply_add = [contribution](auto &dst) {
+            dst += *contribution;
+          };
+          return result;
+        });
+        typename std::decay_t<decltype(builder)>::Model::MatrixOperatorFactory
+          pressure_jacobian = [&, pressure, flow_id](const auto &context) {
+            return metric_flow_x_pressure_operator(flow,
+                                                   pressure,
+                                                   context.state(flow_id),
+                                                   context.time());
+          };
+        pressure_term.state(id, std::move(pressure_jacobian));
+        builder.saddle_point(id,
+                                     {solid_fields.fields().displacement.id(),
+                              solid_fields.fields().velocity.id(),
+                              flow_fields.fields().state},
+                             detail::make_multiplier_metric(builder, lambda));
+        return ConstraintFields<std::decay_t<decltype(multiplier)>>{lambda};
+      },
+      "wall");
+    auto state     = adapter.make_state();
+    auto state_dot = adapter.make_state();
+    flow.initialize_state(adapter.field(state, flow_fields.fields().state), 0.);
+    flow.initialize_state_derivative(adapter.field(state_dot,
+                                                   flow_fields.fields().state),
+                                     0.);
+    auto baseline = adapter.make_state();
+    auto forced   = adapter.make_state();
+    adapter.solver().residual(0., state, state_dot, baseline);
+    EXPECT_LT(baseline.l2_norm(), 1.e-10);
+    adapter.field(state, wall.fields().multiplier) = 0.5;
+    adapter.solver().residual(0., state, state_dot, forced);
+    forced -= baseline;
+    EXPECT_NEAR(
+      adapter.field(forced, solid_fields.fields().displacement).l2_norm(),
+      0.,
+      1.e-14);
+    EXPECT_GT(adapter.field(forced, solid_fields.fields().velocity).l2_norm(),
+              1.e-10);
+    EXPECT_NEAR(adapter.field(forced, wall.fields().multiplier).l2_norm(),
+                0.,
+                1.e-14);
+    const auto &flow_increment =
+      adapter.field(forced, flow_fields.fields().state);
+    for (const auto index : flow.component_dofs(Problem::Component::area))
+      if (flow.locally_owned_dofs().is_element(index))
+        EXPECT_NEAR(flow_increment[index], 0., 1.e-14);
+
+    // Check the complete state/derivative linearization at a nonzero multiplier
+    // and an expanded area, so the nonlinear radius derivative is exercised.
+    auto  direction      = adapter.make_state();
+    auto &flow_direction = adapter.field(direction, flow_fields.fields().state);
+    auto &flow_state     = adapter.field(state, flow_fields.fields().state);
+    for (const auto index : flow.component_dofs(Problem::Component::area))
+      if (flow.locally_owned_dofs().is_element(index))
+        {
+          flow_state[index] *= 1.1;
+          flow_direction[index] = 0.1 * flow_state[index];
+        }
+    for (const auto &field :
+         {solid_fields.fields().displacement, solid_fields.fields().velocity})
+      for (const auto index : field.locally_owned_dofs())
+        if (!field.constraints().is_constrained(index))
+          adapter.field(direction, field)[index] = 0.001;
+    adapter.field(direction, wall.fields().multiplier) = 0.2;
+    constexpr double alpha                             = 10.;
+    adapter.solver().setup_jacobian(0., state, state_dot, alpha);
+    auto action = adapter.make_state();
+    adapter.current_jacobian().vmult(action, direction);
+    constexpr double epsilon   = 1.e-5;
+    auto             plus      = state;
+    auto             minus     = state;
+    auto             dot_plus  = state_dot;
+    auto             dot_minus = state_dot;
+    plus.add(epsilon, direction);
+    minus.add(-epsilon, direction);
+    dot_plus.add(alpha * epsilon, direction);
+    dot_minus.add(-alpha * epsilon, direction);
+    adapter.solver().residual(0., plus, dot_plus, forced);
+    adapter.solver().residual(0., minus, dot_minus, baseline);
+    forced -= baseline;
+    forced *= 0.5 / epsilon;
+    forced -= action;
+    EXPECT_LT(forced.l2_norm(), 1.e-6 * action.l2_norm() + 1.e-12);
+
+    auto small_rhs = action;
+    small_rhs *= 1.e-14;
+    auto correction = adapter.make_state();
+    adapter.solver().solve_with_jacobian(small_rhs, correction, 1.e-10);
+    adapter.current_jacobian().vmult(forced, correction);
+    forced -= small_rhs;
+    EXPECT_LT(forced.l2_norm(), 1.e-6 * small_rhs.l2_norm());
+  }
+
+} // namespace
+
 TEST(MetricFlowX, BOTH_WallTractionActsOnMomentumAndPreservesContinuity)
 {
-  using namespace dealii;
-  using namespace ImmersX;
-  ParameterAcceptor::clear();
-  Problem                flow(MPI_COMM_WORLD);
-  TimeIntervalParameters time("/", false);
-  FixedStepParameters    step("/", false);
-  IDAParameters          ida("/MetricFlowSystem<1, 3>/IDA parameters/", &time);
-  ElastodynamicsParameters<3>        parameters("/Elastodynamics/",
-                                         &time,
-                                         &step,
-                                         &ida);
-  TensorProductLift<1, 2, 3, 3>      lift("/MetricFlowX vessel wall lift/");
-  FiniteElementSpaceParameters<1, 3> multiplier_parameters(
-    "/MetricFlowX multiplier space/", "FE_DGQ(2)");
-  const auto input = TestPaths::parameter_path(
-    "gtests/parameters/metric_flow_x_elastodynamics.prm");
-  initialize_parameters(input);
-  flow.initialize_params(input);
-  flow.setup();
-  multiplier_parameters.finite_element = "FE_DGQ(2)";
-  ElastodynamicsSolver<3> solid(parameters);
-  solid.make_grid();
-  solid.setup_fe();
-  solid.setup_system();
-  solid.assemble_operators();
-  solid.set_initial_conditions();
-  FiniteElementSpace<1, 3> multiplier_space(flow.triangulation(),
-                                            multiplier_parameters);
-  const auto               multiplier_view = multiplier_space.view();
-  const auto               multiplier      = multiplier_view.field("lambda");
-  ImportedFiniteElementFields<1, 3> imported(
-    TestPaths::data_filename("metric_flow_x/single_vessel_centered.vtk"),
-    flow.triangulation(),
-    MPI_COMM_WORLD);
-  const auto a0 = imported.field("a0");
-  const auto A0 = frozen(a0.field(), a0.coefficients());
-  Adapter    adapter(time, ida, MPI_COMM_WORLD);
-  adapter.set_schur_primal_coupling();
-  const auto solid_fields = adapter.add(solid, "solid");
-  const auto flow_fields  = adapter.add(metric_flow_x(flow), "flow");
-  const auto wall         = adapter.add(
-    [&](auto &builder) {
-      const auto id =
-        builder.algebraic_field(multiplier.name(),
-                                multiplier.locally_owned_dofs(),
-                                multiplier.locally_relevant_dofs());
-      const auto lambda      = multiplier.with_id(id);
-      const auto radius      = sqrt(A0 / numbers::PI);
-      const auto lambda_wall = ImmersX::lift(value(lambda), lift, radius);
-      const auto negative_wall_displacement =
-        ImmersX::lift(radius -
-                        sqrt(value(flow_fields.fields().area) / numbers::PI),
-                      lift,
-                      radius);
-      weak_term(value(solid_fields.fields().displacement), test(lambda_wall))
-        .add(builder);
-      weak_term(negative_wall_displacement, test(lambda)).add(builder);
-      weak_term(lambda_wall, test(solid_fields.fields().velocity)).add(builder);
-      const auto pressure      = -1. * value(lambda);
-      const auto flow_id       = flow_fields.fields().state;
-      auto       pressure_term = builder.term(flow_id, "native-pressure");
-      pressure_term.residual([&, pressure, flow_id, id](const auto &context) {
-        auto contribution = std::make_shared<FieldVector>(flow.make_state());
-        *contribution     = 0.;
-        flow.add_external_pressure_residual(
-          context.time(),
-          context.state(flow_id),
-          metric_flow_x_pressure_provider(pressure, context.state(id)),
-          *contribution);
-        PackagedOperation<FieldVector> result;
-        result.reinit_vector = [&flow](auto &dst, const bool) {
-          flow.reinit_state(dst);
-        };
-        result.apply     = [contribution](auto &dst) { dst = *contribution; };
-        result.apply_add = [contribution](auto &dst) { dst += *contribution; };
-        return result;
-      });
-      typename std::decay_t<decltype(builder)>::Model::MatrixOperatorFactory
-        pressure_jacobian = [&, pressure, flow_id](const auto &context) {
-          return metric_flow_x_pressure_operator(flow,
-                                                 pressure,
-                                                 context.state(flow_id),
-                                                 context.time());
-        };
-      pressure_term.state(id, std::move(pressure_jacobian));
-      builder.saddle_point(id,
-                                   {solid_fields.fields().displacement.id(),
-                            solid_fields.fields().velocity.id(),
-                            flow_fields.fields().state},
-                           detail::make_multiplier_metric(builder, lambda));
-      return ConstraintFields<std::decay_t<decltype(multiplier)>>{lambda};
-    },
-    "wall");
-  auto state     = adapter.make_state();
-  auto state_dot = adapter.make_state();
-  flow.initialize_state(adapter.field(state, flow_fields.fields().state), 0.);
-  flow.initialize_state_derivative(adapter.field(state_dot,
-                                                 flow_fields.fields().state),
-                                   0.);
-  auto baseline = adapter.make_state();
-  auto forced   = adapter.make_state();
-  adapter.solver().residual(0., state, state_dot, baseline);
-  adapter.field(state, wall.fields().multiplier) = 0.5;
-  adapter.solver().residual(0., state, state_dot, forced);
-  forced -= baseline;
-  EXPECT_NEAR(
-    adapter.field(forced, solid_fields.fields().displacement).l2_norm(),
-    0.,
-    1.e-14);
-  EXPECT_GT(adapter.field(forced, solid_fields.fields().velocity).l2_norm(),
-            1.e-10);
-  EXPECT_NEAR(adapter.field(forced, wall.fields().multiplier).l2_norm(),
-              0.,
-              1.e-14);
-  const auto &flow_increment =
-    adapter.field(forced, flow_fields.fields().state);
-  for (const auto index : flow.component_dofs(Problem::Component::area))
-    if (flow.locally_owned_dofs().is_element(index))
-      EXPECT_NEAR(flow_increment[index], 0., 1.e-14);
+  check_wall_traction("gtests/parameters/metric_flow_x_elastodynamics.prm",
+                      "metric_flow_x/single_vessel_centered.vtk");
+}
 
-  // Check the complete state/derivative linearization at a nonzero multiplier
-  // and an expanded area, so the nonlinear radius derivative is exercised.
-  auto  direction      = adapter.make_state();
-  auto &flow_direction = adapter.field(direction, flow_fields.fields().state);
-  auto &flow_state     = adapter.field(state, flow_fields.fields().state);
-  for (const auto index : flow.component_dofs(Problem::Component::area))
-    if (flow.locally_owned_dofs().is_element(index))
-      {
-        flow_state[index] *= 1.1;
-        flow_direction[index] = 0.1 * flow_state[index];
-      }
-  adapter.field(direction, wall.fields().multiplier) = 0.2;
-  constexpr double alpha                             = 10.;
-  adapter.solver().setup_jacobian(0., state, state_dot, alpha);
-  auto action = adapter.make_state();
-  adapter.current_jacobian().vmult(action, direction);
-  constexpr double epsilon   = 1.e-5;
-  auto             plus      = state;
-  auto             minus     = state;
-  auto             dot_plus  = state_dot;
-  auto             dot_minus = state_dot;
-  plus.add(epsilon, direction);
-  minus.add(-epsilon, direction);
-  dot_plus.add(alpha * epsilon, direction);
-  dot_minus.add(-alpha * epsilon, direction);
-  adapter.solver().residual(0., plus, dot_plus, forced);
-  adapter.solver().residual(0., minus, dot_minus, baseline);
-  forced -= baseline;
-  forced *= 0.5 / epsilon;
-  forced -= action;
-  EXPECT_LT(forced.l2_norm(), 1.e-6 * action.l2_norm() + 1.e-12);
-
-  auto small_rhs = action;
-  small_rhs *= 1.e-14;
-  auto correction = adapter.make_state();
-  adapter.solver().solve_with_jacobian(small_rhs, correction, 1.e-10);
-  adapter.current_jacobian().vmult(forced, correction);
-  forced -= small_rhs;
-  EXPECT_LT(forced.l2_norm(), 1.e-6 * small_rhs.l2_norm());
+TEST(MetricFlowX, BOTH_RCRWallTractionActsOnMomentumAndPreservesContinuity)
+{
+#  ifdef DEBUG
+  const std::string variant = "Debug";
+#  else
+  const std::string variant = "Release";
+#  endif
+  check_wall_traction("gtests/parameters/metric_RCRDefault_" + variant +
+                        "_Serial.prm",
+                      "tests/metric_flow_x_two_vessels_rcr.vtk");
 }
 
 // Two outlets on different ranks expose interleaved FE/Pc numbering. The

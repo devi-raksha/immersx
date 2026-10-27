@@ -23,6 +23,7 @@
 #  include <immersx/core/observable_lift.h>
 #  include <immersx/core/sundials_ida_adapter.h>
 #  include <immersx/core/weak_term.h>
+#  include <immersx/coupling/immersed_repartitioner.h>
 #  include <immersx/io/utils.h>
 #  include <immersx/physics/elastodynamics.h>
 #  include <immersx/physics/elastodynamics_semidiscrete.h>
@@ -86,6 +87,15 @@ namespace
       ParameterAcceptor::prm,
       Patterns::Selection("iterative|umfpack|mumps"));
 
+    ParameterAcceptor coupling("/MetricFlowX coupling/");
+    std::string       embedded_partitioning = "default";
+    coupling.add_parameter(
+      "Embedded partitioning policy",
+      embedded_partitioning,
+      "default preserves ordinary Domain ownership; immersed follows the solid cell owner at each vessel cell center.",
+      ParameterAcceptor::prm,
+      Patterns::Selection("default|immersed"));
+
     initialize_parameters(parameter_file);
     flow_problem.initialize_params(parameter_file);
 
@@ -105,6 +115,9 @@ namespace
       ExcMessage(
         "The coupled MUMPS solver requires deal.II configured with MUMPS."));
 #  endif
+    SolidProblem solid_problem(solid_parameters);
+    solid_problem.make_grid();
+
     DomainParameters<1, 3> flow_domain_parameters("/MetricFlowX domain/");
     flow_domain_parameters.name_of_grid =
       metric_flow_parameter("Vtk file path for mesh input");
@@ -115,7 +128,14 @@ namespace
       [&](const auto &coarse_mesh, const unsigned int refinement) {
         flow_domain_parameters.initial_refinement = refinement;
         flow_domain.prepare_grid(coarse_mesh);
-        flow_domain.finalize_grid();
+        if (embedded_partitioning == "default")
+          flow_domain.finalize_grid();
+        else if (embedded_partitioning == "immersed")
+          {
+            const ImmersedRepartitioner<1, 3> policy(
+              solid_problem.triangulation());
+            flow_domain.finalize_grid(policy);
+          }
       });
     if (lambda_parameters.finite_element == "auto")
       lambda_parameters.finite_element =
@@ -144,8 +164,6 @@ namespace
     reference_area.update_ghost_values();
     const auto A0 = frozen(a0.field(), reference_area);
 
-    SolidProblem solid_problem(solid_parameters);
-    solid_problem.make_grid();
     solid_problem.setup_fe();
     solid_problem.setup_system();
     solid_problem.assemble_operators();

@@ -34,6 +34,35 @@ nonzero-inflow coupled example in serial and on two MPI ranks, using degree
 two to check automatic multiplier selection. Coupled cases write to separate
 build-tree output directories.
 
+The coupled application can assign vessel cells to the owners of the solid
+cells containing their centers:
+
+```text
+subsection MetricFlowX coupling
+  set Embedded partitioning policy = immersed
+end
+```
+
+The default value, `default`, retains ordinary Domain partitioning. With
+`immersed`, the solid mesh is built first and supplies the ownership policy
+when the flow Domain is finalized. The multiplier and imported vessel data
+are then initialized on that final mesh. This policy improves proximity to
+the solid; its load balance follows the solid partition and vessel locations.
+It can leave ranks without vessels and does not guarantee connected vessel
+subdomains. Vessel cell centers must lie inside the solid mesh.
+
+With
+[MetricFlowX PR #82](https://github.com/luca-heltai/metric-flow-x/pull/82),
+both policies keep each RCR capacitor pressure on the rank owning its
+terminal cell. The adapter maps native FE indices into the complete flow
+state before coupling area and velocity fields. Imported reference areas and multiplier
+fields keep their own FE numbering. Older MetricFlowX packages with an
+identity FE-to-state map remain supported.
+
+MetricFlowX and ImmersX must also use the same linear algebra backend. When
+deal.II provides Trilinos, configure MetricFlowX with
+`-DMETRIC_FLOW_X_BACKEND=Trilinos` for this application.
+
 The inflow starts with $Q(0)=Q'(0)=0$, matching the initially resting solid
 and zero initial acceleration. Displacement compatibility also imposes
 conditions on the initial velocity and acceleration; a nonzero initial

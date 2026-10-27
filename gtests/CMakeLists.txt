@@ -367,18 +367,30 @@ if(IMMERSX_WITH_METRIC_FLOW_X)
                                         TIMEOUT 300 PROCESSORS 2
                                         RESOURCE_LOCK ImmersX.TestOutput
                                         ENVIRONMENT "GTEST_FILTER=MetricFlowX.MPI_*:MetricFlowX.BOTH_*")
+        set(_metric_flow_x_rcr_mpi4_test
+            "ImmersX${${_build_type}_ctest_suffix}.integration.MetricFlowX.RCR.MPI4")
+        add_test(NAME ${_metric_flow_x_rcr_mpi4_test}
+                 COMMAND ${_immersx_mpiexec} -np 4
+                         $<TARGET_FILE:${_metric_flow_x_test_target}>)
+        set_tests_properties(${_metric_flow_x_rcr_mpi4_test}
+                             PROPERTIES LABELS "integration;quick;mpi"
+                                        TIMEOUT 300 PROCESSORS 4
+                                        RESOURCE_LOCK ImmersX.TestOutput
+                                        ENVIRONMENT "GTEST_FILTER=MetricFlowX.BOTH_BackgroundOwnershipKeepsRCRAndFieldValuesLocal")
       endif()
-      foreach(_case Coupled MMS MMSNeumann)
+      foreach(_case Coupled MMS MMSNeumann RCRDefault RCRImmersed)
         set(_coupled_modes Serial MPI)
         if(DEAL_II_WITH_UMFPACK)
           list(APPEND _coupled_modes SerialUMFPACK)
         endif()
         if(DEAL_II_WITH_MUMPS)
           list(APPEND _coupled_modes SerialMUMPS MPIMUMPS)
+          if(_case MATCHES "^RCR")
+            list(APPEND _coupled_modes MPI4MUMPS)
+          endif()
         endif()
         foreach(_mode IN LISTS _coupled_modes)
-          if((_mode STREQUAL "MPI" OR _mode STREQUAL "MPIMUMPS")
-             AND NOT _immersx_mpiexec)
+          if(_mode MATCHES "^MPI" AND NOT _immersx_mpiexec)
             continue()
           endif()
           set(_coupled_name
@@ -394,6 +406,9 @@ if(IMMERSX_WITH_METRIC_FLOW_X)
           elseif(_case STREQUAL "MMSNeumann")
             set(_coupled_output_directory "${TEST_OUTPUT_DIR}/metric-flow-x-mms-cube-neumann")
             set(_coupled_output_times "0;0.05;0.1")
+          elseif(_case MATCHES "^RCR")
+            set(_coupled_output_directory "${TEST_OUTPUT_DIR}/metric-flow-x-rcr")
+            set(_coupled_output_times "0;0.001;0.002")
           endif()
           set(_coupled_input "${CMAKE_CURRENT_BINARY_DIR}/parameters/metric_${_case}_${_build_type}_${_mode}.prm")
           if(_case STREQUAL "MMS")
@@ -402,6 +417,13 @@ if(IMMERSX_WITH_METRIC_FLOW_X)
             set(_coupled_template "${CMAKE_SOURCE_DIR}/tutorials/metric_flow_x_elastodynamics/mms_cube_neumann.prm.in")
           elseif(_case STREQUAL "Coupled")
             set(_coupled_template "${CMAKE_CURRENT_SOURCE_DIR}/parameters/metric_flow_x_elastodynamics.prm.in")
+          elseif(_case MATCHES "^RCR")
+            set(_coupled_template "${CMAKE_CURRENT_SOURCE_DIR}/parameters/metric_flow_x_rcr_coupled.prm.in")
+            if(_case STREQUAL "RCRImmersed")
+              set(PARTITIONING_POLICY "immersed")
+            elseif(_case STREQUAL "RCRDefault")
+              set(PARTITIONING_POLICY "default")
+            endif()
           endif()
           configure_file(
             "${_coupled_template}"
@@ -409,14 +431,18 @@ if(IMMERSX_WITH_METRIC_FLOW_X)
           if(_mode STREQUAL "SerialUMFPACK")
             file(APPEND "${_coupled_input}"
               "\nsubsection MetricFlowSystem<1, 3>\n  subsection IDA parameters\n    subsection Linear solver\n      set Type = umfpack\n    end\n  end\nend\n")
-          elseif(_mode STREQUAL "SerialMUMPS" OR _mode STREQUAL "MPIMUMPS")
+          elseif(_mode STREQUAL "SerialMUMPS" OR _mode STREQUAL "MPIMUMPS" OR _mode STREQUAL "MPI4MUMPS")
             file(APPEND "${_coupled_input}"
               "\nsubsection MetricFlowSystem<1, 3>\n  subsection IDA parameters\n    subsection Linear solver\n      set Type = mumps\n    end\n  end\nend\n")
           endif()
           set(TEST_OUTPUT_DIR "${_saved_output_dir}")
           set(_coupled_mpiexec "")
           set(_coupled_labels "application")
-          if(_mode STREQUAL "MPI" OR _mode STREQUAL "MPIMUMPS")
+          set(_coupled_ranks 2)
+          if(_mode STREQUAL "MPI4MUMPS")
+            set(_coupled_ranks 4)
+          endif()
+          if(_mode MATCHES "^MPI")
             set(_coupled_mpiexec "${_immersx_mpiexec}")
             set(_coupled_labels "application;mpi")
           endif()
@@ -427,11 +453,12 @@ if(IMMERSX_WITH_METRIC_FLOW_X)
               "-DOUTPUT_DIRECTORY=${_coupled_output_directory}"
               "-DEXPECTED_TIMES=${_coupled_output_times}"
               "-DMPIEXEC=${_coupled_mpiexec}"
+              "-DMPI_RANKS=${_coupled_ranks}"
               -P "${CMAKE_CURRENT_SOURCE_DIR}/run_metric_flow_x_coupled.cmake")
           set_tests_properties("${_coupled_name}" PROPERTIES
                                TIMEOUT 600 LABELS "${_coupled_labels}")
-          if(_mode STREQUAL "MPI" OR _mode STREQUAL "MPIMUMPS")
-            set_property(TEST "${_coupled_name}" PROPERTY PROCESSORS 2)
+          if(_mode MATCHES "^MPI")
+            set_property(TEST "${_coupled_name}" PROPERTY PROCESSORS ${_coupled_ranks})
           endif()
         endforeach()
       endforeach()
