@@ -211,7 +211,7 @@ namespace ImmersX
                   cache_->lift_support->thickness(representative_point, 0.);
                 const auto transformed =
                   cache_->lift_support->transform(representative_point,
-                                                  tangent,
+                                                  fe_values.jacobian(q),
                                                   representative_weight,
                                                   thickness,
                                                   q);
