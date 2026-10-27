@@ -29,8 +29,6 @@
   },
   "harness_sha": "785f0c8683e19bb11404605854a92a6b08067231",
   "schema_version": 1,
-  "selected": [
-    "785f0c8683e19bb11404605854a92a6b08067231"
-  ],
+  "selected": [],
   "source_sha": "785f0c8683e19bb11404605854a92a6b08067231"
 }
