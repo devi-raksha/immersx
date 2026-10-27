@@ -11,15 +11,15 @@ skeleton in `.github/CHANGELOG_TEMPLATE.md`.
 
 ### Added
 
-- [PR #N](https://github.com/luca-heltai/immersx/pull/N) Select harmonic reinforcement dimensions and displacement formulation from parameters: reduced meshes use a normal volume lift, full-dimensional meshes need no lift, and either independent displacements with continuity multipliers or one shared displacement can be solved.
+- [PR #290](https://github.com/luca-heltai/immersx/pull/290) Select harmonic reinforcement dimensions and displacement formulation from parameters: reduced meshes use a normal volume lift, full-dimensional meshes need no lift, and either independent displacements with continuity multipliers or one shared displacement can be solved.
 
-- [PR #N](https://github.com/luca-heltai/immersx/pull/N) Integrate known volume sources and linear weak terms on independent physical volume supports, retaining nonzero essential offsets.
+- [PR #290](https://github.com/luca-heltai/immersx/pull/290) Integrate known volume sources and linear weak terms on independent physical volume supports, retaining nonzero essential offsets.
 
-- [PR #N](https://github.com/luca-heltai/immersx/pull/N) Lift scalar representative fields and geometric integration supports to volumes in codimension one and two, using the complete surface tangent space for normal sheet extrusion.
+- [PR #290](https://github.com/luca-heltai/immersx/pull/290) Lift scalar representative fields and geometric integration supports to volumes in codimension one and two, using the complete surface tangent space for normal sheet extrusion.
 
-- [PR #N](https://github.com/luca-heltai/immersx/pull/N) Solve harmonic matrix-plus-excess-fiber systems in 2D and 3D with independent meshes, real and imaginary displacement-continuity constraints, frequency sweeps, and displacement and multiplier output.
+- [PR #290](https://github.com/luca-heltai/immersx/pull/290) Solve harmonic matrix-plus-excess-fiber systems in 2D and 3D with independent meshes, real and imaginary displacement-continuity constraints, frequency sweeps, and displacement and multiplier output.
 
-- [PR #N](https://github.com/luca-heltai/immersx/pull/N) Compose harmonic elasticity Problems with `LinearAdapter` using separate real and imaginary displacement Fields, material-dependent damping, and phased body and Neumann loads.
+- [PR #290](https://github.com/luca-heltai/immersx/pull/290) Compose harmonic elasticity Problems with `LinearAdapter` using separate real and imaginary displacement Fields, material-dependent damping, and phased body and Neumann loads.
 
 - [PR #277](https://github.com/luca-heltai/immersx/pull/277) Allow local co-refinement to partition embedded cells with their background owners through the `immersed` policy, preserving imported fields on the final partition.
 
@@ -103,11 +103,11 @@ skeleton in `.github/CHANGELOG_TEMPLATE.md`.
 
 ### Changed
 
-- [PR #N](https://github.com/luca-heltai/immersx/pull/N) Interpret the harmonic reinforcement root dimension as the reinforcement mesh dimension and the space dimension as the matrix dimension. Use dimension one for a line reinforcement in 2D or 3D.
+- [PR #290](https://github.com/luca-heltai/immersx/pull/290) Interpret the harmonic reinforcement root dimension as the reinforcement mesh dimension and the space dimension as the matrix dimension. Use dimension one for a line reinforcement in 2D or 3D.
 
-- [PR #N](https://github.com/luca-heltai/immersx/pull/N) Share one frequency list between the harmonic matrix and fiber, and preserve the actual initial refinement when saving and reloading either supported parameter alias.
+- [PR #290](https://github.com/luca-heltai/immersx/pull/290) Share one frequency list between the harmonic matrix and fiber, and preserve the actual initial refinement when saving and reloading either supported parameter alias.
 
-- [PR #N](https://github.com/luca-heltai/immersx/pull/N) Support harmonic elasticity on embedded domains with `1 <= dim <= spacedim <= 3` and independent parameter subsections. Grid settings use `Domain`, while existing grid and refinement entries remain accepted.
+- [PR #290](https://github.com/luca-heltai/immersx/pull/290) Support harmonic elasticity on embedded domains with `1 <= dim <= spacedim <= 3` and independent parameter subsections. Grid settings use `Domain`, while existing grid and refinement entries remain accepted.
 
 - [PR #287](https://github.com/luca-heltai/immersx/pull/287) Refresh eliminated Dirichlet contributions automatically when evaluating supported linear weak-term residuals, reusing the matrix while constraint entries stay fixed. Remove `with_lifted_affine_updates()` from the public API.
 
@@ -161,11 +161,11 @@ skeleton in `.github/CHANGELOG_TEMPLATE.md`.
 
 ### Fixed
 
-- [PR #N](https://github.com/luca-heltai/immersx/pull/N) Retain essential source offsets in unreindexed nonmatching weak terms, including harmonic continuity between independently meshed full-dimensional materials.
+- [PR #290](https://github.com/luca-heltai/immersx/pull/290) Retain essential source offsets in unreindexed nonmatching weak terms, including harmonic continuity between independently meshed full-dimensional materials.
 
-- [PR #N](https://github.com/luca-heltai/immersx/pull/N) Write harmonic displacement datasets inside the selected output directory even when its path has no trailing separator.
+- [PR #290](https://github.com/luca-heltai/immersx/pull/290) Write harmonic displacement datasets inside the selected output directory even when its path has no trailing separator.
 
-- [PR #N](https://github.com/luca-heltai/immersx/pull/N) Use the correct Trilinos vector assembly mode in the harmonic complex-Arnoldi updates, which previously failed Debug assertions.
+- [PR #290](https://github.com/luca-heltai/immersx/pull/290) Use the correct Trilinos vector assembly mode in the harmonic complex-Arnoldi updates, which previously failed Debug assertions.
 
 - [PR #287](https://github.com/luca-heltai/immersx/pull/287) Save coupled MetricFlowX fluid output with the accepted simulation times and write the initial state once in each output series. Check fluid, solid, and multiplier output times in the coupled and MMS application tests.
 
@@ -260,9 +260,9 @@ skeleton in `.github/CHANGELOG_TEMPLATE.md`.
 
 ### Tutorial
 
-- [PR #N](https://github.com/luca-heltai/immersx/pull/N) Explain independent and shared harmonic displacements, normal volume lifts, material units, and full-dimensional reinforcement, with runnable examples of both formulations.
+- [PR #290](https://github.com/luca-heltai/immersx/pull/290) Explain independent and shared harmonic displacements, normal volume lifts, material units, and full-dimensional reinforcement, with runnable examples of both formulations.
 
-- [PR #N](https://github.com/luca-heltai/immersx/pull/N) Document harmonic fiber reinforcement, its phase convention and extension API, and add a runnable frequency-sweep tutorial checked in serial and MPI by CTest.
+- [PR #290](https://github.com/luca-heltai/immersx/pull/290) Document harmonic fiber reinforcement, its phase convention and extension API, and add a runnable frequency-sweep tutorial checked in serial and MPI by CTest.
 
 - [PR #275](https://github.com/luca-heltai/immersx/pull/275) Use a single coarse vessel VTK for the cube MMS cases, with parameter-controlled refinement and reference area retained by Domain during flow-mesh refinement.
 
@@ -288,7 +288,7 @@ skeleton in `.github/CHANGELOG_TEMPLATE.md`.
 
 ### Testing and CI
 
-- [PR #N](https://github.com/luca-heltai/immersx/pull/N) Run harmonic reinforcement sweeps through parameter-file dispatch for all six dimension pairs, both formulations, and serial/two-rank MPI execution, checking the expected displacement and multiplier datasets. Verify owned affine offsets against a separately reconstructed finite-element field.
+- [PR #290](https://github.com/luca-heltai/immersx/pull/290) Run harmonic reinforcement sweeps through parameter-file dispatch for all six dimension pairs, both formulations, and serial/two-rank MPI execution, checking the expected displacement and multiplier datasets. Verify owned affine offsets against a separately reconstructed finite-element field.
 
 - [PR #282](https://github.com/luca-heltai/immersx/pull/282) Reduce mesh sizes in the 2D cross-section checks and mixed-boundary time-integrator regression without changing analytic values or tolerances. Keep all eight time steps and run the faster integrator regression in the quick serial/MPI groups. Synchronize MPI application tests before checking files written by rank zero.
 
