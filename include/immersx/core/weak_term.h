@@ -627,8 +627,8 @@ namespace ImmersX
         std::map<dealii::CellId, CellQuadrature> cell_quadratures;
         std::uint64_t local_quadrature_point_count = 0;
         const auto    append_point = [&](const CellIterator       &source_cell,
-                                         const dealii::Point<dim> &point,
-                                         const double              weight) {
+                                      const dealii::Point<dim> &point,
+                                      const double              weight) {
           auto &cell_quadrature       = cell_quadratures[source_cell->id()];
           cell_quadrature.source_cell = source_cell;
           cell_quadrature.reference_points.push_back(point);
@@ -1126,8 +1126,8 @@ namespace ImmersX
                        target_field.space().finite_element().degree);
             const dealii::QGauss<dim> quadrature(degree + 1);
             dealii::UpdateFlags       update_flags = dealii::update_JxW_values |
-                                                     observable.update_flags() |
-                                                     target.update_flags();
+                                               observable.update_flags() |
+                                               target.update_flags();
 
             if (&source.space().dof_handler().get_triangulation() !=
                 &target_field.space().dof_handler().get_triangulation())
@@ -1909,7 +1909,7 @@ namespace ImmersX
                   point.weight               = target_values.JxW(q);
                   point.source_entity_id     = cell->global_active_cell_index();
                   point.representative_qpoint = q;
-                  point.stable_id = static_cast<std::uint64_t>(
+                  point.stable_id             = static_cast<std::uint64_t>(
                                       cell->global_active_cell_index()) *
                                       quadrature.size() +
                                     q;
@@ -2645,7 +2645,7 @@ namespace ImmersX
           auto entry         = std::make_unique<Entry>();
           entry->dof_handler = &input_field.dof_handler();
           entry->reusable    = reuse_across_cells_ &&
-                               &input_field.mapping() == integration_mapping_;
+                            &input_field.mapping() == integration_mapping_;
           std::unique_ptr<dealii::Quadrature<dim>> quadrature;
           if (!entry->reusable)
             {
@@ -2897,7 +2897,7 @@ namespace ImmersX
           std::max(observable.polynomial_degree(),
                    target_field.space().finite_element().degree);
         const dealii::QGauss<dim> quadrature(degree + 1);
-        const auto flags = dealii::update_JxW_values |
+        const auto                flags = dealii::update_JxW_values |
                            dealii::update_quadrature_points |
                            observable.update_flags() | target.update_flags();
         dealii::FEValues<dim, spacedim> source_values(
@@ -3140,7 +3140,7 @@ namespace ImmersX
           std::max(observable.polynomial_degree(),
                    target_field.space().finite_element().degree);
         const dealii::QGauss<dim> quadrature(degree + 1);
-        const auto flags = dealii::update_JxW_values |
+        const auto                flags = dealii::update_JxW_values |
                            dealii::update_quadrature_points |
                            observable.update_flags() | target.update_flags();
 
@@ -3705,9 +3705,9 @@ namespace ImmersX
           n_target_dofs);
 
         ParticleCouplingParameters<SourceField::spacedimension()>
-                                                        particle_parameters(
-                                                          "/ImmersX/weak term/lifted-target/" +
-                                                          std::to_string(reinterpret_cast<std::uintptr_t>(&source)));
+          particle_parameters(
+            "/ImmersX/weak term/lifted-target/" +
+            std::to_string(reinterpret_cast<std::uintptr_t>(&source)));
         ParticleCoupling<SourceField::spacedimension()> distribution(
           particle_parameters);
         distribution.initialize_particle_handler(*source_tria,
@@ -4483,9 +4483,9 @@ namespace ImmersX
           const auto pairing = make_pairing(builder, target_, region_);
           const auto frozen  = observable_.template frozen_values<VectorType>();
           term.residual([pairing, frozen](const auto &) {
-            const auto affine_rhs = pairing.affine_rhs_factory ?
-                                      pairing.affine_rhs_factory() :
-                                      pairing.affine_rhs;
+            const auto                affine_rhs = pairing.affine_rhs_factory ?
+                                                     pairing.affine_rhs_factory() :
+                                                     pairing.affine_rhs;
             typename Model::Operation result;
             result.reinit_vector =
               pairing.operator_with_matrix.view.reinit_range_vector;
@@ -4686,7 +4686,7 @@ namespace ImmersX
           builder.term(multiplier, suffix + ".multiplier")
             .residual([pairing, source_id, sign](const auto &context) {
               auto       result = sign * (pairing.operator_with_matrix.view *
-                                          context.state(source_id));
+                                    context.state(source_id));
               const auto affine_rhs = pairing.affine_rhs_factory ?
                                         pairing.affine_rhs_factory() :
                                         pairing.affine_rhs;

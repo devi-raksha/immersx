@@ -422,7 +422,7 @@ namespace ImmersX
       const auto   &target_field = target.source();
       const auto    quadrature   = dealii::QGauss<dim>(degree);
       const auto    flags = target.update_flags() | dealii::update_JxW_values |
-                            dealii::update_quadrature_points;
+                         dealii::update_quadrature_points;
 
       if (region.kind == KnownTermRegion::Kind::volume)
         {
@@ -502,11 +502,11 @@ namespace ImmersX
         &source_field.mapping() == &target.source().mapping(),
         dealii::ExcMessage(
           "A frozen KnownTerm source and target must share a mapping."));
-      const auto  quadrature = dealii::QGauss<dim>(degree);
-      const auto  flags      = source.update_flags() | target.update_flags() |
-                               dealii::update_JxW_values |
-                               dealii::update_quadrature_points;
-      const auto &frozen     = source.template frozen_values<VectorType>();
+      const auto quadrature = dealii::QGauss<dim>(degree);
+      const auto flags      = source.update_flags() | target.update_flags() |
+                         dealii::update_JxW_values |
+                         dealii::update_quadrature_points;
+      const auto &frozen = source.template frozen_values<VectorType>();
 
       if (region.kind == KnownTermRegion::Kind::volume)
         {

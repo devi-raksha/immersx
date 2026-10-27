@@ -428,7 +428,7 @@ TEST(LiftedIntegrationSupport,
   ParameterAcceptor::clear();
   LiftedLineFixture             fixture;
   FiniteElementSpace<1, 3>      space(fixture.domain.triangulation(),
-                                      std::make_unique<FE_Q<1, 3>>(1));
+                                 std::make_unique<FE_Q<1, 3>>(1));
   const auto                    view = space.view();
   TensorProductLift<1, 2, 3, 3> geometry("/Selected vector modes/");
   geometry.thickness                     = "0.1";

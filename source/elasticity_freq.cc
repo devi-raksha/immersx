@@ -298,8 +298,8 @@ namespace ImmersX
                   h[i][j] = top;
                 }
 
-              const C      a     = h[j][j],
-                           lower = h[j + 1][j]; // move ot upper triangular form
+              const C a          = h[j][j],
+                      lower      = h[j + 1][j]; // move ot upper triangular form
               const double abs_a = std::abs(a), abs_lower = std::abs(lower);
               const double rotation_norm = std::hypot(abs_a, abs_lower);
               AssertThrow(rotation_norm > 0.0 && std::isfinite(rotation_norm),
@@ -553,12 +553,12 @@ namespace ImmersX
     //   //                              update_values | update_gradients |
     //   //                                update_quadrature_points | update_JxW_values);
     FEFaceValues<dim, spacedim>      fe_face_values(*fe,
-                                                    *face_quadrature_formula,
-                                                    update_values |
-                                                      update_gradients |
-                                                      update_JxW_values |
-                                                      update_quadrature_points |
-                                                      update_normal_vectors);
+                                               *face_quadrature_formula,
+                                               update_values |
+                                                 update_gradients |
+                                                 update_JxW_values |
+                                                 update_quadrature_points |
+                                                 update_normal_vectors);
     const FEValuesExtractors::Vector displacement(0);
 
     //   // const unsigned int                   dofs_per_cell =
@@ -896,10 +896,10 @@ namespace ImmersX
     par.set_rhs_times(0.0);
     par.set_boundary_condition_times(0.0);
     FEValues<dim, spacedim>     fe_values(*fe,
-                                          *quadrature,
-                                          update_values | update_gradients |
-                                            update_quadrature_points |
-                                            update_JxW_values);
+                                      *quadrature,
+                                      update_values | update_gradients |
+                                        update_quadrature_points |
+                                        update_JxW_values);
     FEFaceValues<dim, spacedim> fe_face_values(*fe,
                                                *face_quadrature_formula,
                                                update_values |
@@ -1178,9 +1178,9 @@ namespace ImmersX
     for (const auto i : owned_dofs[0])
       {
         amplitude[i] = std::hypot(real[i], imag[i]);
-        phase[i] = amplitude[i] > 0.0 ?
-                     std::atan2(imag[i], real[i]) * 180.0 / std::acos(-1.0) :
-                     0.0;
+        phase[i]     = amplitude[i] > 0.0 ?
+                         std::atan2(imag[i], real[i]) * 180.0 / std::acos(-1.0) :
+                         0.0;
       }
     amplitude.compress(VectorOperation::insert);
     phase.compress(VectorOperation::insert);

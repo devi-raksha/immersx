@@ -217,7 +217,7 @@ namespace ImmersX
       matrix_storage.prepare_frequency(frequency);
       parameters.fiber_parameters.set_rhs_times(0.);
       Adapter    adapter(parameters.solver_parameters,
-                         matrix_storage.communicator());
+                      matrix_storage.communicator());
       const auto matrix = adapter.add(matrix_storage, "matrix").fields();
       if (parameters.formulation == "shared")
         {

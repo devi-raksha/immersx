@@ -74,9 +74,9 @@ namespace ImmersX
     using Lift =
       TensorProductLift<reduced_dim, surface_dim, spacedim, n_components>;
     using Support  = TensorProductLiftSupport<reduced_dim,
-                                              surface_dim,
-                                              spacedim,
-                                              n_components>;
+                                             surface_dim,
+                                             spacedim,
+                                             n_components>;
     using Operator = dealii::LinearOperator<value_type, state_type>;
 
     LiftedObservable(SourceObservable source, const Lift &lift)
@@ -1003,8 +1003,8 @@ namespace ImmersX
       const auto &field      = source();
       const auto &quadrature = support_->representative_quadrature();
       const auto  flags = dealii::update_values | dealii::update_JxW_values |
-                          dealii::update_quadrature_points |
-                          dealii::update_jacobians;
+                         dealii::update_quadrature_points |
+                         dealii::update_jacobians;
       dealii::FEValues<reduced_dim, spacedim> values(
         field.mapping(), field.space().finite_element(), quadrature, flags);
       for (const auto &cell : field.dof_handler().active_cell_iterators())

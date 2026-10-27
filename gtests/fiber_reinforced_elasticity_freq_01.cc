@@ -90,7 +90,7 @@ namespace
           std::complex<double>(-3. * omega * omega, 2.1 * omega);
         const auto amplitude = volume / (volume * matrix + 1.5 * fiber);
         const auto expected  = [amplitude](const auto &,
-                                           const unsigned int component) {
+                                          const unsigned int component) {
           return (component + 1.) * amplitude;
         };
         check_coefficients(driver.matrix_problem(), expected);
@@ -139,7 +139,7 @@ namespace
     const double area     = std::pow(2., dim - 1);
     const double slope    = area / (4. * area + 10.);
     const auto   expected = [slope](const auto        &point,
-                                    const unsigned int component) {
+                                  const unsigned int component) {
       return std::complex<double>(component == 0 ? slope * (point[0] + 1.) : 0.,
                                   0.);
     };
