@@ -21,10 +21,25 @@
 
 #  include <memory>
 #  include <numeric>
+#  include <type_traits>
 #  include <utility>
 
 namespace ImmersX
 {
+  namespace detail
+  {
+    template <typename Problem, typename = void>
+    struct metric_flow_x_has_system_dof_index : std::false_type
+    {};
+
+    template <typename Problem>
+    struct metric_flow_x_has_system_dof_index<
+      Problem,
+      std::void_t<decltype(std::declval<const Problem &>().system_dof_index(
+        dealii::types::global_dof_index{}))>> : std::true_type
+    {};
+  } // namespace detail
+
   /** Non-owning description of a MetricFlowX Problem contribution.
    *
    * BloodFlowSystem owns the mesh, physics, and native vectors.  This value
@@ -70,6 +85,10 @@ namespace ImmersX
     using Vector  = ::MetricFlowX::VectorType;
     using Matrix  = ::MetricFlowX::MatrixType;
 
+    static_assert(
+      std::is_same_v<Vector, ImmersXLA::MPI::Vector>,
+      "MetricFlowX and ImmersX must use the same linear algebra backend.");
+
     AssertThrow(description.problem != nullptr,
                 dealii::ExcMessage("A MetricFlowX Problem cannot be null."));
     Problem &problem = *description.problem;
@@ -84,7 +103,7 @@ namespace ImmersX
       state, [](const auto &matrix, const auto &prototype) {
         using Preconditioner = ::MetricFlowX::LA::MPI::PreconditionILU;
         typename Preconditioner::AdditionalData data;
-#  ifdef DEAL_II_WITH_TRILINOS
+#  ifdef METRIC_FLOW_X_WITH_TRILINOS
         // Algebraic face traces have zero diagonal entries in the native
         // matrix.
         data.ilu_atol = 1.e-5;
@@ -147,16 +166,21 @@ namespace ImmersX
     auto execution_constraints =
       std::make_shared<dealii::AffineConstraints<double>>(
         problem.constraints());
-    std::vector<dealii::types::global_dof_index> identity(
+    std::vector<dealii::types::global_dof_index> fe_to_state(
       problem.dof_handler().n_dofs());
-    std::iota(identity.begin(), identity.end(), 0);
+    std::iota(fe_to_state.begin(), fe_to_state.end(), 0);
+    // Rank-local RCR pressures interrupt the FE numbering between ranks.
+    // Older MetricFlowX packages kept FE indices unchanged in the full state.
+    if constexpr (detail::metric_flow_x_has_system_dof_index<Problem>::value)
+      for (auto &index : fe_to_state)
+        index = problem.system_dof_index(index);
     const auto make_state_field = [&](const auto        &extractor,
                                       const std::string &name) {
       return space->field(state, name, extractor)
         .reindexed(name,
                    problem.locally_owned_dofs(),
                    problem.locally_relevant_dofs(),
-                   identity,
+                   fe_to_state,
                    execution_constraints);
     };
     return {state,

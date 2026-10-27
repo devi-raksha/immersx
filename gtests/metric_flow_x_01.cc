@@ -13,8 +13,10 @@
 
 #include <gtest/gtest.h>
 #include <immersx/core/constraint.h>
+#include <immersx/core/domain.h>
 #include <immersx/core/observable_lift.h>
 #include <immersx/core/sundials_ida_adapter.h>
+#include <immersx/coupling/immersed_repartitioner.h>
 #include <immersx/io/imported_finite_element_fields.h>
 #include <immersx/io/utils.h>
 #include <immersx/physics/elastodynamics_semidiscrete.h>
@@ -413,6 +415,181 @@ TEST(MetricFlowX, BOTH_WallTractionActsOnMomentumAndPreservesContinuity)
   adapter.current_jacobian().vmult(forced, correction);
   forced -= small_rhs;
   EXPECT_LT(forced.l2_norm(), 1.e-6 * small_rhs.l2_norm());
+}
+
+// Two outlets on different ranks expose interleaved FE/Pc numbering. The
+// scalar wall-radius row has an independent quadrature oracle, rather than
+// comparing two paths through the native flow assembler.
+TEST(MetricFlowX, BOTH_BackgroundOwnershipKeepsRCRAndFieldValuesLocal)
+{
+  using namespace dealii;
+  using namespace ImmersX;
+  if constexpr (!ImmersX::detail::metric_flow_x_has_system_dof_index<
+                  Problem>::value)
+    GTEST_SKIP()
+      << "This regression requires MetricFlowX rank-local RCR numbering.";
+  ParameterAcceptor::clear();
+  Problem flow(MPI_COMM_WORLD);
+  flow.initialize_params(TestPaths::parameter_path(
+    "gtests/parameters/metric_flow_x_rcr_partition.prm"));
+  DomainParameters<3> background_parameters("/RCR ownership/background/");
+  background_parameters.arguments_for_grid = "-0.2:0.2:false";
+  background_parameters.initial_refinement = 2;
+  Domain<3> background(background_parameters);
+  background.make_grid();
+  DomainParameters<1, 3> vessel_parameters("/RCR ownership/vessels/");
+  vessel_parameters.name_of_grid =
+    TestPaths::data_filename("tests/metric_flow_x_two_vessels_rcr.vtk");
+  vessel_parameters.read_vtk_fields = true;
+  Domain<1, 3> vessels(vessel_parameters, flow.triangulation());
+  flow.setup([&](const auto &coarse, const unsigned int refinement) {
+    vessel_parameters.initial_refinement = refinement;
+    vessels.prepare_grid(coarse);
+    const ImmersedRepartitioner<1, 3> policy(background.triangulation());
+    vessels.finalize_grid(policy);
+  });
+
+  unsigned int local_terminals = 0;
+  for (const auto &cell : flow.triangulation().active_cell_iterators())
+    if (cell->is_locally_owned())
+      {
+        bool found_background_owner = false;
+        for (const auto &bulk :
+             background.triangulation().active_cell_iterators())
+          if (bulk->is_locally_owned())
+            {
+              bool inside = true;
+              for (unsigned int d = 0; d < 3; ++d)
+                inside = inside && cell->center()[d] > bulk->vertex(0)[d] &&
+                         cell->center()[d] < bulk->vertex(7)[d];
+              found_background_owner = found_background_owner || inside;
+            }
+        EXPECT_TRUE(found_background_owner);
+        for (const auto f : cell->face_indices())
+          if (cell->face(f)->at_boundary() &&
+              (cell->face(f)->boundary_id() == 1 ||
+               cell->face(f)->boundary_id() == 2))
+            ++local_terminals;
+      }
+  const auto local_pc = flow.locally_owned_dofs().n_elements() -
+                        flow.dof_handler().n_locally_owned_dofs();
+  EXPECT_EQ(local_pc, local_terminals);
+  EXPECT_EQ(Utilities::MPI::sum(local_terminals, MPI_COMM_WORLD), 2u);
+  // Two refinement levels let p4est distribute complete sibling families.
+  // One level can keep this entire background mesh on a single rank.
+  const auto ranks = Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD);
+  EXPECT_EQ(Utilities::MPI::sum(static_cast<unsigned int>(local_terminals > 0),
+                                MPI_COMM_WORLD),
+            std::min(2u, ranks));
+  if (ranks > 2)
+    EXPECT_EQ(
+      Utilities::MPI::min(flow.triangulation().n_locally_owned_active_cells(),
+                          MPI_COMM_WORLD),
+      0u);
+
+  StateLayout                      layout;
+  SemiDiscreteModel<FieldVector>   model;
+  SemidiscreteBuilder<FieldVector> builder(layout, model);
+  const auto   fields      = contribute(builder, metric_flow_x(flow));
+  unsigned int unavailable = 0;
+  for (const auto i : flow.dof_handler().locally_owned_dofs())
+    if (!flow.locally_owned_dofs().is_element(fields.area.execution_index(i)))
+      ++unavailable;
+  const auto total_unavailable =
+    Utilities::MPI::sum(unavailable, MPI_COMM_WORLD);
+  EXPECT_EQ(total_unavailable, 0u);
+  if (total_unavailable != 0)
+    return; // All ranks leave before any weak-term collective.
+
+  FiniteElementSpaceParameters<1, 3> multiplier_parameters(
+    "/RCR ownership/multiplier/", "FE_DGQ(2)");
+  FiniteElementSpace<1, 3> multiplier_space(flow.triangulation(),
+                                            multiplier_parameters);
+  const auto               multiplier_view   = multiplier_space.view();
+  const auto               native_multiplier = multiplier_view.field("lambda");
+  const auto               id =
+    builder.algebraic_field("lambda",
+                            native_multiplier.locally_owned_dofs(),
+                            native_multiplier.locally_relevant_dofs());
+  const auto multiplier = native_multiplier.with_id(id);
+  const auto a0         = vessels.field("a0");
+  const auto A0         = frozen(a0.field(), a0.coefficients());
+  weak_term(sqrt(A0 / numbers::PI) - sqrt(value(fields.area) / numbers::PI),
+            test(multiplier))
+    .add(builder);
+
+  auto state = flow.make_state();
+  state = 9000.; // Make accidental reads of capacitor pressures conspicuous.
+  for (const auto component :
+       {Problem::Component::area, Problem::Component::area_trace})
+    for (const auto i : flow.component_dofs(component))
+      state[i] = 4.e-4;
+  for (const auto component :
+       {Problem::Component::velocity, Problem::Component::velocity_trace})
+    for (const auto i : flow.component_dofs(component))
+      state[i] = .125;
+  state.compress(VectorOperation::insert);
+  FieldVector lambda, residual, expected, expected_action;
+  lambda.reinit(multiplier.locally_owned_dofs(), MPI_COMM_WORLD);
+  residual.reinit(lambda);
+  expected.reinit(lambda);
+  expected_action.reinit(lambda);
+  lambda = expected = expected_action = 0.;
+  StateView<FieldVector> view(layout, 0.);
+  view.bind(fields.state, state);
+  view.bind(id, lambda);
+  const EvaluationContext<FieldVector> context(0., view);
+  model.evaluate_row(id, context, residual);
+  const QGauss<1>                      quadrature(4);
+  FEValues<1, 3>                       values(multiplier_space.finite_element(),
+                        quadrature,
+                        update_values | update_JxW_values);
+  std::vector<types::global_dof_index> indices(values.dofs_per_cell);
+  for (const auto &cell : multiplier_view.dof_handler().active_cell_iterators())
+    if (cell->is_locally_owned())
+      {
+        values.reinit(cell);
+        cell->get_dof_indices(indices);
+        const double reference = cell->material_id() == 0 ? 1.e-4 : 2.e-4;
+        const double radius =
+          std::sqrt(reference / numbers::PI) - std::sqrt(4.e-4 / numbers::PI);
+        const double derivative =
+          -1.e-4 / (2. * std::sqrt(numbers::PI * 4.e-4));
+        for (const auto q : values.quadrature_point_indices())
+          for (const auto i : values.dof_indices())
+            {
+              expected[indices[i]] +=
+                radius * values.shape_value(i, q) * values.JxW(q);
+              expected_action[indices[i]] +=
+                derivative * values.shape_value(i, q) * values.JxW(q);
+            }
+      }
+  expected.compress(VectorOperation::add);
+  expected_action.compress(VectorOperation::add);
+  residual -= expected;
+  EXPECT_LT(residual.l2_norm(), 1.e-13);
+  auto direction = flow.make_state();
+  direction      = 0.;
+  for (const auto i : flow.component_dofs(Problem::Component::area))
+    direction[i] = 1.e-4;
+  direction.compress(VectorOperation::insert);
+  FieldVector action;
+  action.reinit(lambda);
+  model.state_operator(id, fields.state, context).vmult(action, direction);
+  action -= expected_action;
+  EXPECT_LT(action.l2_norm(), 1.e-13);
+
+  direction = 1.;
+  for (const auto component : {Problem::Component::area,
+                               Problem::Component::velocity,
+                               Problem::Component::area_trace,
+                               Problem::Component::velocity_trace})
+    for (const auto i : flow.component_dofs(component))
+      direction[i] = 0.;
+  direction.compress(VectorOperation::insert);
+  model.state_operator(id, fields.state, context).vmult(action, direction);
+  EXPECT_LT(action.l2_norm(),
+            1.e-14); // Capacitor pressures do not change radius.
 }
 
 TEST(MetricFlowX, BOTH_IDAFailureDoesNotPublishAnAcceptedStep)
