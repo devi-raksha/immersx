@@ -12,6 +12,7 @@ skeleton in `.github/CHANGELOG_TEMPLATE.md`.
 ### Added
 
 - [PR #291](https://github.com/luca-heltai/immersx/pull/291) Allow ElastodynamicsSolver to run on simplex (triangle and tetrahedron) meshes with `FE_SimplexP`, simplex Gauss quadrature, and a linear `MappingFE`. Simplex meshes require the fullydistributed Domain triangulation. `run()` skips the error table on simplex meshes, and `compute_error()` throws there.
+- [PR #291](https://github.com/luca-heltai/immersx/pull/291) Report the solid boundary ids and the number of vessel cells with a vertex outside the solid mesh at the start of `metric_flow_x_elastodynamics`.
 - [PR #290](https://github.com/luca-heltai/immersx/pull/290) Select harmonic reinforcement dimensions and displacement formulation from parameters: reduced meshes use a normal volume lift, full-dimensional meshes need no lift, and either independent displacements with continuity multipliers or one shared displacement can be solved.
 - [PR #290](https://github.com/luca-heltai/immersx/pull/290) Integrate known volume sources and linear weak terms on independent physical volume supports, retaining nonzero essential offsets.
 - [PR #290](https://github.com/luca-heltai/immersx/pull/290) Lift scalar representative fields and geometric integration supports to volumes in codimension one and two, using the complete surface tangent space for normal sheet extrusion.
