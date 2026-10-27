@@ -11,6 +11,8 @@ skeleton in `.github/CHANGELOG_TEMPLATE.md`.
 
 ### Added
 
+- [PR #N](https://github.com/luca-heltai/immersx/pull/N) Allow ElastodynamicsSolver to run on simplex (triangle and tetrahedron) meshes with `FE_SimplexP`, simplex Gauss quadrature, and a linear `MappingFE`. Simplex meshes require the fullydistributed Domain triangulation.
+
 - [PR #288](https://github.com/luca-heltai/immersx/pull/288) Support Field-local absolute tolerances, a history-preserving startup tolerance ramp, and cumulative IDA progress statistics.
 
 - [PR #288](https://github.com/luca-heltai/immersx/pull/288) Expose all backported IDA solver controls through IDAParameters while preserving existing defaults.
