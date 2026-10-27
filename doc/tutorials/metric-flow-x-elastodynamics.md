@@ -55,8 +55,8 @@ With
 [MetricFlowX PR #82](https://github.com/luca-heltai/metric-flow-x/pull/82),
 both policies keep each RCR capacitor pressure on the rank owning its
 terminal cell. The adapter maps native FE indices into the complete flow
-state before coupling area and velocity fields. Imported reference areas and multiplier
-fields keep their own FE numbering. Older MetricFlowX packages with an
+state before coupling area and velocity fields. Imported reference areas and
+multiplier fields keep their own FE numbering. Older MetricFlowX packages with an
 identity FE-to-state map remain supported.
 
 MetricFlowX and ImmersX must also use the same linear algebra backend. When
