@@ -264,6 +264,8 @@ skeleton in `.github/CHANGELOG_TEMPLATE.md`.
 
 ### Tutorial
 
+- [PR #290](https://github.com/luca-heltai/immersx/pull/290) Add a frequency-sweep tutorial for a 1D fiber in a 3D matrix, with a 2D section lift and runnable independent and shared displacement inputs.
+
 - [PR #290](https://github.com/luca-heltai/immersx/pull/290) Explain independent and shared harmonic displacements, normal volume lifts, material units, and full-dimensional reinforcement, with runnable examples of both formulations.
 
 - [PR #290](https://github.com/luca-heltai/immersx/pull/290) Document harmonic fiber reinforcement, its phase convention and extension API, and add a runnable frequency-sweep tutorial checked in serial and MPI by CTest.

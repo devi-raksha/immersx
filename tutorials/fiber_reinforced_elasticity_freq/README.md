@@ -5,6 +5,8 @@ CMake configures these inputs into the build tree:
 - `parameters.prm`: 1D reinforcement in 2D, with a 1D lift.
 - `shared.prm`: the same geometry with one shared displacement.
 - `full_dimension.prm`: 2D reinforcement in 2D, without a lift.
+- `fiber_3d.prm`: 1D reinforcement in 3D, with a 2D section lift.
+- `fiber_3d_shared.prm`: the same 3D geometry with one shared displacement.
 - `sheet.prm`: 2D reinforcement in 3D, with a 1D normal lift.
 
 ```bash
@@ -21,3 +23,5 @@ Both sweep 0, 0.1, and 0.2 Hz and write results below the build output tree.
 
 See `doc/tutorials/fiber-reinforced-frequency.md` for equations, material units,
 phase conventions, API usage, and current limits.
+
+See `doc/tutorials/fiber-in-3d-frequency.md` for the 3D matrix example.

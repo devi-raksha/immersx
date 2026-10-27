@@ -32,7 +32,7 @@ parameter templates into the build tree, with absolute output paths. The
 executable and input can also be addressed by absolute paths from another
 working directory.
 
-Four complete inputs are provided under
+Six complete inputs are provided under
 `tutorials/fiber_reinforced_elasticity_freq/`:
 
 | Generated input | Reinforcement | Formulation |
@@ -40,7 +40,12 @@ Four complete inputs are provided under
 | `parameters.prm` | 1D in 2D, with a 1D lift | `independent` |
 | `shared.prm` | 1D in 2D, with a 1D lift | `shared` |
 | `full_dimension.prm` | 2D in 2D, without a lift | `independent` |
+| `fiber_3d.prm` | 1D in 3D, with a 2D lift | `independent` |
+| `fiber_3d_shared.prm` | 1D in 3D, with a 2D lift | `shared` |
 | `sheet.prm` | 2D in 3D, with a 1D lift | `independent` |
+
+The [fiber in a 3D matrix tutorial](fiber-in-3d-frequency.md) explains the
+codimension-two geometry and both displacement formulations.
 
 The canonical lifted input is:
 
