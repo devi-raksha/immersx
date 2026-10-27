@@ -526,9 +526,8 @@ namespace ImmersX
         if constexpr (support_dim <= dim && SourceField::dimension() == dim &&
                       dim == spacedim)
           if (!matches_source && !matches_target)
-            return assemble_background_trace<VectorType, MatrixType>(observable,
-                                                                     target,
-                                                                     support);
+            return assemble_background_trace<VectorType, MatrixType>(
+              observable, target, support, affine_rhs, affine_data);
         AssertThrow(matches_source || matches_target,
                     dealii::ExcMessage(
                       "An explicit support must use the source or test "
@@ -553,19 +552,22 @@ namespace ImmersX
                 std::enable_if_t<is_physical_quadrature_support<Support>::value,
                                  int> = 0>
       static MatrixStorage<MatrixType>
-      assemble_on_support(const ObservableType   &observable,
-                          const TargetExpression &target,
-                          const Support          &support)
+      assemble_on_support(const ObservableType        &observable,
+                          const TargetExpression      &target,
+                          const Support               &support,
+                          std::shared_ptr<VectorType> *affine_rhs = nullptr,
+                          std::shared_ptr<AffineData<VectorType, MatrixType>>
+                            *affine_data = nullptr)
       {
-        static_assert(Support::intrinsic_dimension == dim - 1,
-                      "Independent trace integration currently requires "
-                      "codimension one.");
+        static_assert(Support::intrinsic_dimension > 0 &&
+                        Support::intrinsic_dimension <= dim,
+                      "Physical integration support must have dimension "
+                      "between one and the background dimension.");
         static_assert(Support::ambient_dimension == spacedim,
                       "Integration support and weak-term fields must share "
                       "an embedding dimension.");
-        return assemble_background_trace<VectorType, MatrixType>(observable,
-                                                                 target,
-                                                                 support);
+        return assemble_background_trace<VectorType, MatrixType>(
+          observable, target, support, affine_rhs, affine_data);
       }
 
       /** Assemble a background-to-background pairing at physical points
@@ -579,9 +581,13 @@ namespace ImmersX
        */
       template <typename VectorType, typename MatrixType, typename Support>
       static MatrixStorage<MatrixType>
-      assemble_background_trace(const ObservableType   &observable,
-                                const TargetExpression &target,
-                                const Support          &support)
+      assemble_background_trace(
+        const ObservableType        &observable,
+        const TargetExpression      &target,
+        const Support               &support,
+        std::shared_ptr<VectorType> *affine_rhs = nullptr,
+        std::shared_ptr<AffineData<VectorType, MatrixType>> *affine_data =
+          nullptr)
       {
         constexpr int support_dim = [] {
           if constexpr (is_physical_quadrature_support<Support>::value)
@@ -846,6 +852,25 @@ namespace ImmersX
                                  sparsity,
                                  target_field.space().mpi_communicator());
 
+        if (affine_data != nullptr)
+          {
+            *affine_data =
+              std::make_shared<AffineData<VectorType, MatrixType>>();
+            (*affine_data)
+              ->set_constraints(source.constraints(),
+                                target_field.constraints());
+            (*affine_data)->locally_owned = target_field.locally_owned_dofs();
+            (*affine_data)->communicator =
+              target_field.space().mpi_communicator();
+            (*affine_data)->sink_matrix = std::make_shared<MatrixType>();
+            (*affine_data)->sink_sparsity =
+              initialize_weak_matrix(*(*affine_data)->sink_matrix,
+                                     target_field.locally_owned_dofs(),
+                                     source.locally_owned_dofs(),
+                                     sparsity,
+                                     target_field.space().mpi_communicator());
+          }
+
         for (const auto &[cell_id, cell_quadrature] : cell_quadratures)
           {
             (void)cell_id;
@@ -869,18 +894,24 @@ namespace ImmersX
               flags);
             source_values.reinit(cell_quadrature.source_cell);
             target_values.reinit(target_cell);
-            assemble_cell<VectorType>(
-              observable,
-              source,
-              source_values,
-              target,
-              target_values,
-              cell_quadrature.source_cell,
-              target_cell,
-              point_quadrature,
-              *matrix,
-              static_cast<AffineData<VectorType, MatrixType> *>(nullptr),
-              &cell_quadrature.physical_weights);
+            assemble_cell<VectorType>(observable,
+                                      source,
+                                      source_values,
+                                      target,
+                                      target_values,
+                                      cell_quadrature.source_cell,
+                                      target_cell,
+                                      point_quadrature,
+                                      *matrix,
+                                      affine_data != nullptr ?
+                                        affine_data->get() :
+                                        nullptr,
+                                      &cell_quadrature.physical_weights);
+          }
+        if (affine_rhs != nullptr && affine_data != nullptr)
+          {
+            *affine_rhs = std::make_shared<VectorType>();
+            (*affine_data)->refresh(**affine_rhs);
           }
         compress_weak_matrix(*matrix);
         return {std::move(matrix), std::move(matrix_sparsity)};
@@ -4796,7 +4827,11 @@ namespace ImmersX
                 if constexpr (is_physical_quadrature_support<Support>::value)
                   return Assembly::template assemble_on_support<VectorType,
                                                                 MatrixType>(
-                    observable_, target, support_);
+                    observable_,
+                    target,
+                    support_,
+                    &result.affine_rhs,
+                    &affine_data);
                 else if constexpr (std::is_same_v<
                                      Support,
                                      BoundaryIntegrationSupport<
@@ -4841,6 +4876,52 @@ namespace ImmersX
                     Assembly::template dynamic_matrix_operator<VectorType,
                                                                MatrixType>(
                       prepared);
+                  // Condensed nonmatching matrices omit essential columns.
+                  // Keep their action on the affine offset using the same
+                  // backend with unconstrained source columns.
+                  if constexpr (std::is_constructible_v<TrialExpression,
+                                                        trial_field_type>)
+                    {
+                      const auto source      = observable_.source();
+                      const auto constrained = dealii::Utilities::MPI::max(
+                        source.constraints().n_constraints() != 0 ? 1u : 0u,
+                        source.space().mpi_communicator());
+                      if (!source.is_reindexed() && constrained != 0)
+                        {
+                          auto empty = std::make_shared<
+                            dealii::AffineConstraints<double>>();
+                          empty->reinit(source.locally_owned_dofs(),
+                                        source.locally_relevant_dofs());
+                          empty->close();
+                          const auto unconstrained =
+                            TrialExpression(source.with_constraints(empty))
+                              .scaled(observable_.scale());
+                          const auto affine_prepared =
+                            Assembly::template prepare<VectorType, MatrixType>(
+                              unconstrained, target);
+                          const auto affine_operator =
+                            Assembly::template dynamic_matrix_operator<
+                              VectorType,
+                              MatrixType>(affine_prepared);
+                          result.affine_rhs_factory = [source,
+                                                       affine_operator] {
+                            VectorType offset;
+                            affine_operator.view.reinit_domain_vector(offset,
+                                                                      false);
+                            offset = 0.;
+                            for (const auto i : source.locally_owned_dofs())
+                              offset[i] +=
+                                source.constraints().get_inhomogeneity(i);
+                            detail::compress_weak_vector(offset);
+                            auto rhs = std::make_shared<VectorType>();
+                            affine_operator.view.reinit_range_vector(*rhs,
+                                                                     false);
+                            affine_operator.view.vmult(*rhs, offset);
+                            *rhs *= -1.;
+                            return rhs;
+                          };
+                        }
+                    }
                 }
               else
                 {

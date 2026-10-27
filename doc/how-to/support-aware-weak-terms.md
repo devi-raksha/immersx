@@ -119,8 +119,10 @@ weak_term(response, test(v_background)).on(dGamma).add(builder);
 
 The residual and Jacobian use the current active state and the frozen input
 coefficients. Frozen FE inputs must share the source mesh and mapping.
-Independent background-to-background linear pairings currently require
-homogeneous source constraints.
+Linear pairings on independent geometric supports retain essential source
+offsets. Supported linear pairings refresh eliminated Dirichlet contributions
+during residual evaluation while constraint entries stay fixed. Rebuild after
+changing constraint structure or geometry.
 The three-argument `fe_space(dof_handler, mapping, constraints)` view extracts
 locally relevant DoFs. Pass an explicit set when one is already available.
 Distributed nonlinear evaluation needs locally relevant ghost values in active
@@ -154,3 +156,17 @@ support points must lie in its searchable domain. Geometry is fixed during
 residual and Jacobian evaluation. Call `dV.rebuild()` after changing the mesh,
 lift descriptor, or thickness evaluator. See [Integrate over a lifted
 geometry](lifted-integration) for ownership, normal, and benchmark details.
+
+Known callback sources can use the same physical support:
+
+```cpp
+KnownSource<double, 3> forcing([](const KnownTermContext<3> &context) {
+  return context.point[0] + context.time;
+});
+known_term(forcing, test(u_background)).on(dV).add(builder);
+```
+
+The callback is evaluated at the physical quadrature points, with the physical
+weights supplied by the support. Its material id is the background cell's material id.
+These terms have no state derivative. Physical supports can have any positive
+dimension up to the background dimension, including independent volume meshes.
