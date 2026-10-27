@@ -11,6 +11,8 @@ skeleton in `.github/CHANGELOG_TEMPLATE.md`.
 
 ### Added
 
+- [PR #N](https://github.com/luca-heltai/immersx/pull/N) Add the `metric_flow_x_liver` application, which couples MetricFlowX blood flow in a vessel tree with elastodynamics of the surrounding tissue read from a mesh file, and reports which vessel cells lie outside the tissue mesh.
+
 - [PR #N](https://github.com/luca-heltai/immersx/pull/N) Allow ElastodynamicsSolver to run on simplex (triangle and tetrahedron) meshes with `FE_SimplexP`, simplex Gauss quadrature, and a linear `MappingFE`. Simplex meshes require the fullydistributed Domain triangulation.
 
 - [PR #288](https://github.com/luca-heltai/immersx/pull/288) Support Field-local absolute tolerances, a history-preserving startup tolerance ramp, and cumulative IDA progress statistics.
