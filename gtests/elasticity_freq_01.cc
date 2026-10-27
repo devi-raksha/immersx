@@ -127,6 +127,8 @@ namespace
   void
   check_adapter_affine_displacement()
   {
+    SCOPED_TRACE("dim=" + std::to_string(dim) +
+                 ", spacedim=" + std::to_string(spacedim));
     using namespace ImmersX;
     using namespace dealii;
     ParameterAcceptor::clear();
@@ -174,6 +176,25 @@ namespace
     problem.setup_fe();
     problem.setup_dofs();
     problem.prepare_frequency(frequency);
+    if constexpr (dim == 1)
+      {
+        IndexSet physical_endpoints(problem.dof_handler().n_dofs());
+        for (const auto &cell : problem.dof_handler().active_cell_iterators())
+          if (!cell->is_artificial())
+            for (const auto face : cell->face_indices())
+              if (cell->at_boundary(face))
+                for (unsigned int component = 0; component < spacedim;
+                     ++component)
+                  physical_endpoints.add_index(
+                    cell->vertex_dof_index(face, component));
+        physical_endpoints.compress();
+        // Artificial-cell endpoints must not prescribe interior unknowns.
+        for (const auto &line : problem.real_constraints().get_lines())
+          EXPECT_TRUE(physical_endpoints.is_element(line.index));
+        for (const auto &line :
+             problem.imaginary_part_constraints().get_lines())
+          EXPECT_TRUE(physical_endpoints.is_element(line.index));
+      }
     LinearAdapterParameters solver_parameters;
     solver_parameters.solver = LinearSolver::direct;
     LinearAdapter<ImmersXLA::MPI::Vector, ImmersXLA::MPI::BlockVector> adapter(

@@ -161,6 +161,8 @@ skeleton in `.github/CHANGELOG_TEMPLATE.md`.
 
 ### Fixed
 
+- [PR #290](https://github.com/luca-heltai/immersx/pull/290) Apply harmonic 1D Dirichlet amplitudes only on physical boundary cells with deal.II 9.7, preserving nonzero complex boundary data across MPI partitions.
+
 - [PR #290](https://github.com/luca-heltai/immersx/pull/290) Retain essential source offsets in unreindexed nonmatching weak terms, including harmonic continuity between independently meshed full-dimensional materials.
 
 - [PR #290](https://github.com/luca-heltai/immersx/pull/290) Write harmonic displacement datasets inside the selected output directory even when its path has no trailing separator.

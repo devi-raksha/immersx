@@ -832,7 +832,29 @@ namespace ImmersX
             par.get_dirichlet_bc(id),
             phase_factor(
               par.dirichlet_phase_by_id, id, par.dirichlet_phase, imaginary));
-          VectorTools::interpolate_boundary_values(dh, id, amplitude, c);
+          if constexpr (dim == 1 && !DEAL_II_VERSION_GTE(9, 8, 0))
+            {
+              // deal.II 9.7 also visits artificial 1D cells, whose endpoint
+              // ids and coordinates do not describe physical boundary data.
+              for (const auto &cell : dh.active_cell_iterators())
+                if (!cell->is_artificial())
+                  for (const auto face : cell->face_indices())
+                    if (cell->at_boundary(face) &&
+                        cell->face(face)->boundary_id() == id)
+                      for (unsigned int component = 0; component < spacedim;
+                           ++component)
+                        {
+                          const auto dof =
+                            cell->vertex_dof_index(face, component);
+                          if (c.can_store_line(dof) && !c.is_constrained(dof))
+                            c.add_constraint(dof,
+                                             {},
+                                             amplitude.value(cell->vertex(face),
+                                                             component));
+                        }
+            }
+          else
+            VectorTools::interpolate_boundary_values(dh, id, amplitude, c);
         }
       // two maps for owning ampltiude and pointing to object
       std::map<types::boundary_id, std::unique_ptr<ScaledAmplitude<spacedim>>>
