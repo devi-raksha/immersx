@@ -52,6 +52,7 @@ set(_public_headers
     immersx/compatibility/dealii_9_9/utilities.h
     immersx/core/sundials_kinsol_adapter.h
     immersx/core/time_parameters.h
+    immersx/core/ida_tolerance_ramp.h
     immersx/core/linear_adapter.h
     immersx/core/matrix_operator.h
     immersx/core/observable.h
@@ -407,10 +408,10 @@ if(IMMERSX_WITH_METRIC_FLOW_X)
             "${_coupled_input}" @ONLY)
           if(_mode STREQUAL "SerialUMFPACK")
             file(APPEND "${_coupled_input}"
-              "\nsubsection MetricFlowX coupled solver\n  set Linear solver = umfpack\nend\n")
+              "\nsubsection MetricFlowSystem<1, 3>\n  subsection IDA parameters\n    subsection Linear solver\n      set Type = umfpack\n    end\n  end\nend\n")
           elseif(_mode STREQUAL "SerialMUMPS" OR _mode STREQUAL "MPIMUMPS")
             file(APPEND "${_coupled_input}"
-              "\nsubsection MetricFlowX coupled solver\n  set Linear solver = mumps\nend\n")
+              "\nsubsection MetricFlowSystem<1, 3>\n  subsection IDA parameters\n    subsection Linear solver\n      set Type = mumps\n    end\n  end\nend\n")
           endif()
           set(TEST_OUTPUT_DIR "${_saved_output_dir}")
           set(_coupled_mpiexec "")

@@ -95,9 +95,9 @@ TEST(MetricFlowX, BOTH_RegistersOneMixedStateField)
 {
   dealii::ParameterAcceptor::clear();
   Problem                         problem(MPI_COMM_WORLD);
-  ImmersX::TimeIntervalParameters time_parameters(
-    "/MetricFlowSystem<1, 3>/Time interval/");
-  ImmersX::IDAParameters ida_parameters("/MetricFlowSystem<1, 3>/IDA/");
+  ImmersX::TimeIntervalParameters time_parameters("/", false);
+  ImmersX::IDAParameters          ida_parameters(
+    "/MetricFlowSystem<1, 3>/IDA parameters/", &time_parameters);
   initialize_problem(problem);
 
   Adapter    adapter(time_parameters, ida_parameters, MPI_COMM_WORLD);
@@ -125,9 +125,9 @@ TEST(MetricFlowX, BOTH_ResidualMatchesNativeAndPreservesAdditivity)
 {
   dealii::ParameterAcceptor::clear();
   Problem                         problem(MPI_COMM_WORLD);
-  ImmersX::TimeIntervalParameters time_parameters(
-    "/MetricFlowSystem<1, 3>/Time interval/");
-  ImmersX::IDAParameters ida_parameters("/MetricFlowSystem<1, 3>/IDA/");
+  ImmersX::TimeIntervalParameters time_parameters("/", false);
+  ImmersX::IDAParameters          ida_parameters(
+    "/MetricFlowSystem<1, 3>/IDA parameters/", &time_parameters);
   initialize_problem(problem);
 
   Adapter    adapter(time_parameters, ida_parameters, MPI_COMM_WORLD);
@@ -157,9 +157,9 @@ TEST(MetricFlowX, BOTH_JacobianActionsMatchNativeMatrices)
 {
   dealii::ParameterAcceptor::clear();
   Problem                         problem(MPI_COMM_WORLD);
-  ImmersX::TimeIntervalParameters time_parameters(
-    "/MetricFlowSystem<1, 3>/Time interval/");
-  ImmersX::IDAParameters ida_parameters("/MetricFlowSystem<1, 3>/IDA/");
+  ImmersX::TimeIntervalParameters time_parameters("/", false);
+  ImmersX::IDAParameters          ida_parameters(
+    "/MetricFlowSystem<1, 3>/IDA parameters/", &time_parameters);
   initialize_problem(problem);
 
   Adapter    adapter(time_parameters, ida_parameters, MPI_COMM_WORLD);
@@ -206,9 +206,9 @@ TEST(MetricFlowX, BOTH_IDAVerticalSmoke)
 {
   dealii::ParameterAcceptor::clear();
   Problem                         problem(MPI_COMM_WORLD);
-  ImmersX::TimeIntervalParameters time_parameters(
-    "/MetricFlowSystem<1, 3>/Time interval/");
-  ImmersX::IDAParameters ida_parameters("/MetricFlowSystem<1, 3>/IDA/");
+  ImmersX::TimeIntervalParameters time_parameters("/", false);
+  ImmersX::IDAParameters          ida_parameters(
+    "/MetricFlowSystem<1, 3>/IDA parameters/", &time_parameters);
   initialize_problem(problem);
 
   Adapter    adapter(time_parameters, ida_parameters, MPI_COMM_WORLD);
@@ -237,9 +237,9 @@ TEST(MetricFlowX, BOTH_NativeStateInitializesPositiveArea)
 {
   dealii::ParameterAcceptor::clear();
   Problem                         problem(MPI_COMM_WORLD);
-  ImmersX::TimeIntervalParameters time_parameters(
-    "/MetricFlowSystem<1, 3>/Time interval/");
-  ImmersX::IDAParameters ida_parameters("/MetricFlowSystem<1, 3>/IDA/");
+  ImmersX::TimeIntervalParameters time_parameters("/", false);
+  ImmersX::IDAParameters          ida_parameters(
+    "/MetricFlowSystem<1, 3>/IDA parameters/", &time_parameters);
   initialize_problem(problem);
 
   auto state = problem.make_state();
@@ -257,10 +257,10 @@ TEST(MetricFlowX, BOTH_WallTractionActsOnMomentumAndPreservesContinuity)
   using namespace dealii;
   using namespace ImmersX;
   ParameterAcceptor::clear();
-  Problem                            flow(MPI_COMM_WORLD);
-  TimeIntervalParameters             time;
-  FixedStepParameters                step;
-  IDAParameters                      ida;
+  Problem                flow(MPI_COMM_WORLD);
+  TimeIntervalParameters time("/", false);
+  FixedStepParameters    step("/", false);
+  IDAParameters          ida("/MetricFlowSystem<1, 3>/IDA parameters/", &time);
   ElastodynamicsParameters<3>        parameters("/Elastodynamics/",
                                          &time,
                                          &step,
@@ -419,9 +419,9 @@ TEST(MetricFlowX, BOTH_IDAFailureDoesNotPublishAnAcceptedStep)
 {
   dealii::ParameterAcceptor::clear();
   Problem                         problem(MPI_COMM_WORLD);
-  ImmersX::TimeIntervalParameters time_parameters(
-    "/MetricFlowSystem<1, 3>/Time interval/");
-  ImmersX::IDAParameters ida_parameters("/MetricFlowSystem<1, 3>/IDA/");
+  ImmersX::TimeIntervalParameters time_parameters("/", false);
+  ImmersX::IDAParameters          ida_parameters(
+    "/MetricFlowSystem<1, 3>/IDA parameters/", &time_parameters);
   initialize_problem(problem);
   using IDA = ImmersX::Compatibility::SUNDIALS::IDA<FieldVector>;
   IDA::AdditionalData data;
@@ -462,8 +462,8 @@ TEST(MetricFlowX, BOTH_PressureProviderPreservesDGTracesAndGhostValues)
   using namespace ImmersX;
   ParameterAcceptor::clear();
   Problem                problem(MPI_COMM_WORLD);
-  TimeIntervalParameters time("/MetricFlowSystem<1, 3>/Time interval/");
-  IDAParameters          ida("/MetricFlowSystem<1, 3>/IDA/");
+  TimeIntervalParameters time("/", false);
+  IDAParameters          ida("/MetricFlowSystem<1, 3>/IDA parameters/", &time);
   FiniteElementSpaceParameters<1, 3> parameters("/Pressure space/",
                                                 "FE_DGQ(1)");
   problem.initialize_params(
