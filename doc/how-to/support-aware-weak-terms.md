@@ -62,8 +62,18 @@ auto normal_flux = gradient(u) * wall.normal() * test(v) * wall;
 
 The multiplication form and `weak_term(...).on(support)` form select the same
 support. The matching-mesh path uses deal.II `FEValues` or `FEFaceValues`.
-Matching linear terms retain affine source offsets and refresh changed
-inhomogeneities; their meshes, mappings, and constraint entries must stay fixed.
+Linear terms on matching cell or boundary supports, and terms that pair a bulk
+field with a lifted test expression, retain the local contributions eliminated
+by the source Field's affine constraints. Each residual evaluation reads the
+current inhomogeneities and includes those contributions automatically. No
+option on `weak_term` is needed. Changing the offsets does not rebuild the
+matrix. Update time-dependent boundary data before evaluating the residual;
+a Problem can register a `builder.context_update` callback for this purpose.
+Constraint updates at a candidate time do not accept that physical state.
+
+The mesh, mapping, constrained DoFs, and master coefficients must remain fixed
+while reusing the matrix. A change to the constraint structure is rejected
+collectively; rebuild the term after such a change.
 
 ## Integrate bulk fields on an independent mesh
 
@@ -109,10 +119,10 @@ weak_term(response, test(v_background)).on(dGamma).add(builder);
 
 The residual and Jacobian use the current active state and the frozen input
 coefficients. Frozen FE inputs must share the source mesh and mapping.
-Linear pairings on independent geometric supports retain essential offsets.
-Lifted Observable constraints retain static affine data unless the term opts
-into `with_lifted_affine_updates()`. Reassemble after changing constraint
-structure or geometry.
+Linear pairings on independent geometric supports retain essential source
+offsets. Supported linear pairings refresh eliminated Dirichlet contributions
+during residual evaluation while constraint entries stay fixed. Rebuild after
+changing constraint structure or geometry.
 The three-argument `fe_space(dof_handler, mapping, constraints)` view extracts
 locally relevant DoFs. Pass an explicit set when one is already available.
 Distributed nonlinear evaluation needs locally relevant ghost values in active

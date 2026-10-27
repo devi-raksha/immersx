@@ -109,6 +109,10 @@ skeleton in `.github/CHANGELOG_TEMPLATE.md`.
 
 - [PR #N](https://github.com/luca-heltai/immersx/pull/N) Support harmonic elasticity on embedded domains with `1 <= dim <= spacedim <= 3` and independent parameter subsections. Grid settings use `Domain`, while existing grid and refinement entries remain accepted.
 
+- [PR #287](https://github.com/luca-heltai/immersx/pull/287) Refresh eliminated Dirichlet contributions automatically when evaluating supported linear weak-term residuals, reusing the matrix while constraint entries stay fixed. Remove `with_lifted_affine_updates()` from the public API.
+
+- [PR #287](https://github.com/luca-heltai/immersx/pull/287) Write coupled MetricFlowX test and tutorial output in one directory per case, using `solid`, `flow`, and `pressure_jump` filenames.
+
 - [PR #276](https://github.com/luca-heltai/immersx/pull/276) Keep fiber IDA composition and state local to one solve, write the multiplier through semantic output, and move the uncoupled reference solve to validation tests.
 - [PR #276](https://github.com/luca-heltai/immersx/pull/276) Keep the Poisson-elasticity application focused on pressure traction and semantic output, with residual and traction checks in integration tests.
 - [PR #276](https://github.com/luca-heltai/immersx/pull/276) Simplify coupled Poisson setup and write its solution and multiplier fields directly through semantic output handlers.
@@ -162,6 +166,10 @@ skeleton in `.github/CHANGELOG_TEMPLATE.md`.
 - [PR #N](https://github.com/luca-heltai/immersx/pull/N) Write harmonic displacement datasets inside the selected output directory even when its path has no trailing separator.
 
 - [PR #N](https://github.com/luca-heltai/immersx/pull/N) Use the correct Trilinos vector assembly mode in the harmonic complex-Arnoldi updates, which previously failed Debug assertions.
+
+- [PR #287](https://github.com/luca-heltai/immersx/pull/287) Save coupled MetricFlowX fluid output with the accepted simulation times and write the initial state once in each output series. Check fluid, solid, and multiplier output times in the coupled and MMS application tests.
+
+- [PR #287](https://github.com/luca-heltai/immersx/pull/287) Support time-dependent Dirichlet data in the MetricFlowX elastodynamics coupling and use exact displacement and velocity boundary data in the cube MMS tutorials while retaining exact Neumann variants on both meshes.
 
 - [PR #276](https://github.com/luca-heltai/immersx/pull/276) Apply 1D Poisson Dirichlet data only to non-artificial cells with deal.II 9.7, preserving the pressure solution across MPI partitions.
 - [PR #276](https://github.com/luca-heltai/immersx/pull/276) Keep the Coral Poisson–elasticity workflow compatible with the simplified application interfaces and report traction balance from its displacement residual.
