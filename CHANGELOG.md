@@ -151,12 +151,10 @@ skeleton in `.github/CHANGELOG_TEMPLATE.md`.
 
 ### Fixed
 
+- [PR #289](https://github.com/luca-heltai/immersx/pull/289) Correct LU roundoff in LinearAdapter default direct solves with one residual correction using the cached matrix and factorization, including explicitly reused factorizations.
 - [PR #288](https://github.com/luca-heltai/immersx/pull/288) Report native IDA failures in Release, honor nonzero initial output times, and handle empty ranks, pooled block-layout changes, and callback failures during initialization.
-
 - [PR #287](https://github.com/luca-heltai/immersx/pull/287) Save coupled MetricFlowX fluid output with the accepted simulation times and write the initial state once in each output series. Check fluid, solid, and multiplier output times in the coupled and MMS application tests.
-
 - [PR #287](https://github.com/luca-heltai/immersx/pull/287) Support time-dependent Dirichlet data in the MetricFlowX elastodynamics coupling and use exact displacement and velocity boundary data in the cube MMS tutorials while retaining exact Neumann variants on both meshes.
-
 - [PR #276](https://github.com/luca-heltai/immersx/pull/276) Apply 1D Poisson Dirichlet data only to non-artificial cells with deal.II 9.7, preserving the pressure solution across MPI partitions.
 - [PR #276](https://github.com/luca-heltai/immersx/pull/276) Keep the Coral Poisson–elasticity workflow compatible with the simplified application interfaces and report traction balance from its displacement residual.
 - [PR #275](https://github.com/luca-heltai/immersx/pull/275) Handle exact Krylov breakdown in the default IDA GMRES path with modified Gram-Schmidt, including deal.II 9.7 builds.
