@@ -54,10 +54,18 @@ subdomains. Vessel cell centers must lie inside the solid mesh.
 With
 [MetricFlowX PR #82](https://github.com/luca-heltai/metric-flow-x/pull/82),
 both policies keep each RCR capacitor pressure on the rank owning its
-terminal cell. The adapter maps native FE indices into the complete flow
-state before coupling area and velocity fields. Imported reference areas and
-multiplier fields keep their own FE numbering. Older MetricFlowX packages with an
-identity FE-to-state map remain supported.
+terminal cell. MetricFlowX represents that pressure as component 4 of its
+hp finite element: `FE_DGQ(0)` on capacitive terminal cells and `FE_Nothing`
+elsewhere. Area, velocity, traces and capacitor pressures share the native
+`DoFHandler` numbering; the adapter uses that numbering directly and retains
+MetricFlowX's relevant indices for distant terminal links. There is no
+separate FE-to-state conversion. Observable evaluation and weak-term
+linearization select each cell's active element and local DoF count.
+Imported reference areas and multiplier fields keep their own FE spaces.
+
+Use a MetricFlowX version containing PR #82's hp representation. The earlier
+rank-local layout with manually appended capacitor indices is no longer
+supported by this adapter.
 
 MetricFlowX and ImmersX must also use the same linear algebra backend. When
 deal.II provides Trilinos, configure MetricFlowX with

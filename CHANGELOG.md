@@ -155,8 +155,8 @@ skeleton in `.github/CHANGELOG_TEMPLATE.md`.
 ### Fixed
 
 - [PR #294](https://github.com/luca-heltai/immersx/pull/294) Avoid division by zero in small fiber multiplier Schur solves with deal.II 9.7, including configurable discontinuous multiplier spaces in serial and MPI.
-- [PR #292](https://github.com/luca-heltai/immersx/pull/292) Assemble lifted nonlinear Jacobians in each differentiated field's execution numbering, so MPI coupling derivatives act on vascular area rather than rank-local RCR capacitor pressures. Cover compact and permuted field layouts and check coupled Jacobians per residual block.
-- [PR #292](https://github.com/luca-heltai/immersx/pull/292) Map MetricFlowX area and velocity FE indices into the complete flow state when RCR capacitor pressures are numbered locally on each rank. Preserve compatibility with older identity-numbered packages.
+- [PR #292](https://github.com/luca-heltai/immersx/pull/292) Evaluate lifted observables and nonlinear weak terms with each cell's active finite element and local DoF count, including hp terminal pressure fields. Preserve differentiated fields' execution numbering for compact and permuted layouts and check coupled Jacobians per residual block.
+- [PR #292](https://github.com/luca-heltai/immersx/pull/292) Use MetricFlowX's native hp DoFHandler numbering and ghost indices for coupled area and velocity fields, including RCR capacitor pressures represented as a fifth FE component. Remove the conversion for the previous manually numbered capacitor layout.
 - [PR #290](https://github.com/luca-heltai/immersx/pull/290) Preserve saved Coral graphs by keeping known-source factory and execution-node keys unchanged when KnownTerm has a default integration support.
 - [PR #290](https://github.com/luca-heltai/immersx/pull/290) Apply harmonic 1D Dirichlet amplitudes only on physical boundary cells with deal.II 9.7, preserving nonzero complex boundary data across MPI partitions.
 - [PR #290](https://github.com/luca-heltai/immersx/pull/290) Retain essential source offsets in unreindexed nonmatching weak terms, including harmonic continuity between independently meshed full-dimensional materials.

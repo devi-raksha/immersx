@@ -20,26 +20,11 @@
 #  include <metric_flow_x/blood_flow_system.h>
 
 #  include <memory>
-#  include <numeric>
 #  include <type_traits>
 #  include <utility>
 
 namespace ImmersX
 {
-  namespace detail
-  {
-    template <typename Problem, typename = void>
-    struct metric_flow_x_has_system_dof_index : std::false_type
-    {};
-
-    template <typename Problem>
-    struct metric_flow_x_has_system_dof_index<
-      Problem,
-      std::void_t<decltype(std::declval<const Problem &>().system_dof_index(
-        dealii::types::global_dof_index{}))>> : std::true_type
-    {};
-  } // namespace detail
-
   /** Non-owning description of a MetricFlowX Problem contribution.
    *
    * BloodFlowSystem owns the mesh, physics, and native vectors.  This value
@@ -162,31 +147,12 @@ namespace ImmersX
     auto space = std::make_shared<MetricFlowXFields::Space>(
       problem.dof_handler(),
       dealii::StaticMappingQ1<1, 3>::mapping,
-      problem.constraints());
-    auto execution_constraints =
-      std::make_shared<dealii::AffineConstraints<double>>(
-        problem.constraints());
-    std::vector<dealii::types::global_dof_index> fe_to_state(
-      problem.dof_handler().n_dofs());
-    std::iota(fe_to_state.begin(), fe_to_state.end(), 0);
-    // Rank-local RCR pressures interrupt the FE numbering between ranks.
-    // Older MetricFlowX packages kept FE indices unchanged in the full state.
-    if constexpr (detail::metric_flow_x_has_system_dof_index<Problem>::value)
-      for (auto &index : fe_to_state)
-        index = problem.system_dof_index(index);
-    const auto make_state_field = [&](const auto        &extractor,
-                                      const std::string &name) {
-      return space->field(state, name, extractor)
-        .reindexed(name,
-                   problem.locally_owned_dofs(),
-                   problem.locally_relevant_dofs(),
-                   fe_to_state,
-                   execution_constraints);
-    };
+      problem.constraints(),
+      &problem.locally_relevant_dofs());
     return {state,
             space,
-            make_state_field(problem.area_extractor(), "area"),
-            make_state_field(problem.velocity_extractor(), "velocity")};
+            space->field(state, "area", problem.area_extractor()),
+            space->field(state, "velocity", problem.velocity_extractor())};
   }
 } // namespace ImmersX
 

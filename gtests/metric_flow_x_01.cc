@@ -475,17 +475,13 @@ TEST(MetricFlowX, BOTH_RCRWallTractionActsOnMomentumAndPreservesContinuity)
                       "tests/metric_flow_x_two_vessels_rcr.vtk");
 }
 
-// Two outlets on different ranks expose interleaved FE/Pc numbering. The
+// Two outlets on different ranks exercise native hp FE/Pc ownership. The
 // scalar wall-radius row has an independent quadrature oracle, rather than
 // comparing two paths through the native flow assembler.
 TEST(MetricFlowX, BOTH_BackgroundOwnershipKeepsRCRAndFieldValuesLocal)
 {
   using namespace dealii;
   using namespace ImmersX;
-  if constexpr (!ImmersX::detail::metric_flow_x_has_system_dof_index<
-                  Problem>::value)
-    GTEST_SKIP()
-      << "This regression requires MetricFlowX rank-local RCR numbering.";
   ParameterAcceptor::clear();
   Problem flow(MPI_COMM_WORLD);
   flow.initialize_params(TestPaths::parameter_path(
@@ -529,8 +525,10 @@ TEST(MetricFlowX, BOTH_BackgroundOwnershipKeepsRCRAndFieldValuesLocal)
                cell->face(f)->boundary_id() == 2))
             ++local_terminals;
       }
-  const auto local_pc = flow.locally_owned_dofs().n_elements() -
-                        flow.dof_handler().n_locally_owned_dofs();
+  const auto local_pc =
+    flow.component_dofs(Problem::Component::capacitor_pressure).n_elements();
+  EXPECT_EQ(flow.locally_owned_dofs(), flow.dof_handler().locally_owned_dofs());
+  EXPECT_EQ(flow.locally_owned_dofs().size(), flow.dof_handler().n_dofs());
   EXPECT_EQ(local_pc, local_terminals);
   EXPECT_EQ(Utilities::MPI::sum(local_terminals, MPI_COMM_WORLD), 2u);
   // Two refinement levels let p4est distribute complete sibling families.

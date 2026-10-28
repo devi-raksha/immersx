@@ -17,6 +17,8 @@
 
 #include <deal.II/fe/fe_values.h>
 
+#include <deal.II/hp/fe_values.h>
+
 #include <deal.II/lac/linear_operator.h>
 
 #include <immersx/algebra/linear_algebra.h>
@@ -518,7 +520,7 @@ namespace ImmersX
         std::vector<double>{1.});
       dealii::FEValues<reduced_dim, spacedim> values(
         field.mapping(),
-        field.space().finite_element(),
+        cell->get_fe(),
         quadrature,
         dealii::update_values | ObservableType::update_flags());
       values.reinit(cell);
@@ -571,7 +573,7 @@ namespace ImmersX
         std::vector<double>{1.});
       dealii::FEValues<reduced_dim, spacedim> values(
         field.mapping(),
-        field.space().finite_element(),
+        cell->get_fe(),
         quadrature,
         dealii::update_values | ObservableType::update_flags());
       values.reinit(cell);
@@ -627,7 +629,7 @@ namespace ImmersX
         std::vector<double>{1.});
       dealii::FEValues<reduced_dim, spacedim> values(
         field.mapping(),
-        field.space().finite_element(),
+        cell->get_fe(),
         quadrature,
         dealii::update_values | ObservableType::update_flags());
       values.reinit(cell);
@@ -1005,12 +1007,16 @@ namespace ImmersX
       const auto  flags = dealii::update_values | dealii::update_JxW_values |
                          dealii::update_quadrature_points |
                          dealii::update_jacobians;
-      dealii::FEValues<reduced_dim, spacedim> values(
-        field.mapping(), field.space().finite_element(), quadrature, flags);
+      const dealii::hp::MappingCollection<reduced_dim, spacedim> mappings(
+        field.mapping());
+      const dealii::hp::QCollection<reduced_dim>  quadratures(quadrature);
+      dealii::hp::FEValues<reduced_dim, spacedim> hp_values(
+        mappings, field.dof_handler().get_fe_collection(), quadratures, flags);
       for (const auto &cell : field.dof_handler().active_cell_iterators())
         if (cell->is_locally_owned())
           {
-            values.reinit(cell);
+            hp_values.reinit(cell);
+            const auto &values = hp_values.get_present_fe_values();
             std::vector<dealii::types::global_dof_index> indices(
               cell->get_fe().n_dofs_per_cell());
             cell->get_dof_indices(indices);
