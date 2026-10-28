@@ -6,6 +6,8 @@
 
 #include <deal.II/dofs/dof_tools.h>
 
+#include <deal.II/fe/fe_dgq.h>
+#include <deal.II/fe/fe_nothing.h>
 #include <deal.II/fe/fe_q.h>
 #include <deal.II/fe/fe_system.h>
 
@@ -27,6 +29,7 @@
 #include <immersx/physics/elastodynamics_semidiscrete.h>
 
 #include <algorithm>
+#include <limits>
 #include <numeric>
 #include <set>
 
@@ -869,3 +872,214 @@ TEST(LiftedIntegrationSupport, BOTH_ElastodynamicsMovingDirichlet)
     }
 }
 #endif
+
+TEST(LiftedIntegrationSupport,
+     NonlinearRepresentativeJacobianUsesExecutionIndices)
+{
+  ParameterAcceptor::clear();
+  Triangulation<1, 3> mesh;
+  GridGenerator::hyper_cube(mesh, -1., 1.);
+  FESystem<1, 3>   source_fe(FE_DGQ<1, 3>(1), 2);
+  FE_DGQ<1, 3>     target_fe(2);
+  DoFHandler<1, 3> source_dofs(mesh), target_dofs(mesh);
+  source_dofs.distribute_dofs(source_fe);
+  target_dofs.distribute_dofs(target_fe);
+  AffineConstraints<double> constraints;
+  constraints.close();
+  const auto source_space =
+    fe_space(source_dofs, StaticMappingQ1<1, 3>::mapping, constraints);
+  const auto target_space =
+    fe_space(target_dofs, StaticMappingQ1<1, 3>::mapping, constraints);
+  IndexSet owned(3);
+  owned.add_range(0, 3);
+  using V = ImmersXLA::MPI::Vector;
+  using M = ImmersXLA::MPI::SparseMatrix;
+  StateLayout               layout;
+  SemiDiscreteModel<V, M>   model;
+  SemidiscreteBuilder<V, M> builder(layout, model);
+  const auto                source_id = builder.field("u", owned, owned, owned);
+  const auto target_id = builder.algebraic_field("lambda", owned, owned);
+  std::vector<types::global_dof_index> mapping(
+    source_dofs.n_dofs(), std::numeric_limits<types::global_dof_index>::max());
+  std::vector<types::global_dof_index> native(source_fe.n_dofs_per_cell());
+  source_dofs.begin_active()->get_dof_indices(native);
+  unsigned int active = 0;
+  for (unsigned int j = 0; j < native.size(); ++j)
+    if (source_fe.system_to_component_index(j).first == 0)
+      mapping[native[j]] = active++ == 0 ? 2 : 0;
+  ASSERT_EQ(active, 2u);
+  const auto u =
+    source_space.field(source_id, "u").reindexed("u", owned, owned, mapping);
+  const auto target = target_space.field(target_id, "lambda")
+                        .reindexed("lambda", owned, owned, {2, 1, 0});
+  TensorProductLift<1, 2, 3, 3> geometry("/Reindexed representative lift/");
+  geometry.section.inclusion_degree      = 0;
+  geometry.section.inclusion_type        = "hyper_cube";
+  geometry.section.refinement_level      = 0;
+  geometry.section.selected_coefficients = {0};
+  geometry.section.n_q_points            = 2;
+  geometry.representative_n_q_points     = 3;
+  geometry.thickness                     = "0.25";
+  weak_term(lift(value(u) * value(u), geometry), test(target)).add(builder);
+
+  V state, direction, action, plus_residual, minus_residual;
+  for (auto *vector :
+       {&state, &direction, &action, &plus_residual, &minus_residual})
+    vector->reinit(owned, MPI_COMM_SELF);
+  state[0] = 2.5;
+  state[1] = 99.; // An extra unknown that is not represented by this FE field.
+  state[2] = 1.5;
+  state.compress(VectorOperation::insert);
+  StateView<V> view(layout, 0.);
+  view.bind(source_id, state);
+  const EvaluationContext<V> context(0., view);
+  const auto                 jacobian =
+    model.state_matrix_operator(target_id, source_id, context);
+  ASSERT_TRUE(jacobian.has_value());
+  direction    = 0.;
+  direction[1] = 1.;
+  direction.compress(VectorOperation::insert);
+  jacobian->view.vmult(action, direction);
+  EXPECT_LT(action.l2_norm(), 1.e-14);
+
+  direction[0] = .3;
+  direction[1] = 0.;
+  direction[2] = -.2;
+  direction.compress(VectorOperation::insert);
+  jacobian->view.vmult(action, direction);
+  EXPECT_GT(action.l2_norm(), 1.e-8);
+  constexpr double epsilon = 1.e-6;
+  auto             plus    = state;
+  auto             minus   = state;
+  plus.add(epsilon, direction);
+  minus.add(-epsilon, direction);
+  StateView<V> plus_view(layout, 0.), minus_view(layout, 0.);
+  plus_view.bind(source_id, plus);
+  minus_view.bind(source_id, minus);
+  model.evaluate_row(target_id,
+                     EvaluationContext<V>(0., plus_view),
+                     plus_residual);
+  model.evaluate_row(target_id,
+                     EvaluationContext<V>(0., minus_view),
+                     minus_residual);
+  plus_residual -= minus_residual;
+  plus_residual *= .5 / epsilon;
+  plus_residual -= action;
+  EXPECT_LT(plus_residual.l2_norm(), 1.e-7 * action.l2_norm() + 1.e-12);
+}
+
+
+TEST(LiftedIntegrationSupport, BOTH_NonlinearHpFieldsUseActiveCellElements)
+{
+  ParameterAcceptor::clear();
+  DomainParameters<1, 3> parameters("/hp line domain/");
+  parameters.name_of_grid       = "hyper_cube";
+  parameters.arguments_for_grid = "-1:1:false";
+  parameters.initial_refinement = 2;
+  Domain<1, 3> domain(parameters);
+  domain.make_grid();
+  hp::FECollection<1, 3> elements;
+  elements.push_back(FESystem<1, 3>(FE_DGQ<1, 3>(1), 1, FE_Nothing<1, 3>(), 1));
+  elements.push_back(FESystem<1, 3>(FE_DGQ<1, 3>(1), 1, FE_DGQ<1, 3>(0), 1));
+  DoFHandler<1, 3> dofs(domain.triangulation());
+  for (const auto &cell : dofs.active_cell_iterators())
+    if (cell->is_locally_owned())
+      cell->set_active_fe_index(cell->center()[0] > 0. ? 1 : 0);
+  dofs.distribute_dofs(elements);
+  AffineConstraints<double> constraints;
+  constraints.close();
+  const auto space =
+    fe_space(dofs, StaticMappingQ1<1, 3>::mapping, constraints);
+  using V = ImmersXLA::MPI::Vector;
+  using M = ImmersXLA::MPI::SparseMatrix;
+  StateLayout               layout;
+  SemiDiscreteModel<V, M>   model;
+  SemidiscreteBuilder<V, M> builder(layout, model);
+  const auto                id         = builder.field("hp state",
+                                space.locally_owned_dofs(),
+                                space.locally_relevant_dofs(),
+                                space.locally_owned_dofs());
+  const auto                u          = space.field(id, "u");
+  const auto                expression = value(u) * value(u);
+  const auto                target     = test(u);
+  weak_term(expression, target).add(builder);
+  TensorProductLift<1, 2, 3> geometry("/hp line lift/");
+  geometry.section.inclusion_degree      = 0;
+  geometry.section.inclusion_type        = "hyper_cube";
+  geometry.section.refinement_level      = 0;
+  geometry.section.selected_coefficients = {0};
+  geometry.section.n_q_points            = 2;
+  geometry.representative_n_q_points     = 3;
+  geometry.thickness                     = "0.25";
+  const auto lifted                      = lift(expression, geometry);
+  const auto lifted_id                   = builder.algebraic_field("lifted row",
+                                                 space.locally_owned_dofs(),
+                                                 space.locally_relevant_dofs());
+  weak_term(lifted, test(u.with_id(lifted_id))).add(builder);
+
+  const auto component = DoFTools::extract_dofs(
+    dofs, elements.component_mask(FEValuesExtractors::Scalar(0)));
+  V owned, state, direction, residual, action, expected, lifted_expected;
+  for (auto *v :
+       {&owned, &direction, &residual, &action, &expected, &lifted_expected})
+    v->reinit(space.locally_owned_dofs(), MPI_COMM_WORLD);
+  owned = 9000.; // The auxiliary component must not enter the scalar square.
+  for (const auto i : space.locally_owned_dofs())
+    if (component.is_element(i))
+      owned[i] = 2.;
+  owned.compress(VectorOperation::insert);
+  state.reinit(space.locally_owned_dofs(),
+               space.locally_relevant_dofs(),
+               MPI_COMM_WORLD);
+  state = owned;
+  state.update_ghost_values();
+  StateView<V> view(layout, 0.);
+  view.bind(id, state);
+  const EvaluationContext<V> context(0., view);
+  expected = lifted_expected = 0.;
+  for (const auto &cell : dofs.active_cell_iterators())
+    if (cell->is_locally_owned())
+      {
+        const auto                          &fe = cell->get_fe();
+        std::vector<types::global_dof_index> indices(fe.n_dofs_per_cell());
+        cell->get_dof_indices(indices);
+        for (unsigned int j = 0; j < indices.size(); ++j)
+          if (fe.system_to_component_index(j).first == 0)
+            expected[indices[j]] = 4. * cell->measure() / 2.;
+        for (const auto &point : lifted.lifted_points())
+          if (point.source_cell_id == cell->id())
+            {
+              const auto unit = space.mapping().transform_real_to_unit_cell(
+                cell, point.representative_point);
+              for (unsigned int j = 0; j < indices.size(); ++j)
+                lifted_expected[indices[j]] +=
+                  4. * fe.shape_value_component(j, unit, 0) * point.weight;
+            }
+      }
+  expected.compress(VectorOperation::insert);
+  lifted_expected.compress(VectorOperation::add);
+  for (const auto row : {id, lifted_id})
+    {
+      const auto &oracle = row == id ? expected : lifted_expected;
+      model.evaluate_row(row, context, residual);
+      residual -= oracle;
+      EXPECT_LT(residual.l2_norm(), 1.e-12);
+      direction = 0.;
+      for (const auto i : space.locally_owned_dofs())
+        if (component.is_element(i))
+          direction[i] = 1.;
+      direction.compress(VectorOperation::insert);
+      const auto jacobian = model.state_matrix_operator(row, id, context);
+      ASSERT_TRUE(jacobian.has_value());
+      jacobian->view.vmult(action, direction);
+      action -= oracle; // d(u^2)/du = u^2 = 4 at u = 2.
+      EXPECT_LT(action.l2_norm(), 1.e-12);
+      direction = 1.;
+      for (const auto i : space.locally_owned_dofs())
+        if (component.is_element(i))
+          direction[i] = 0.;
+      direction.compress(VectorOperation::insert);
+      jacobian->view.vmult(action, direction);
+      EXPECT_LT(action.l2_norm(), 1.e-14);
+    }
+}

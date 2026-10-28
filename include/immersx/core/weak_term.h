@@ -23,6 +23,8 @@
 #include <deal.II/grid/grid_tools.h>
 #include <deal.II/grid/grid_tools_cache.h>
 
+#include <deal.II/hp/fe_values.h>
+
 #include <deal.II/lac/dynamic_sparsity_pattern.h>
 #include <deal.II/lac/full_matrix.h>
 #include <deal.II/lac/sparsity_pattern.h>
@@ -2603,8 +2605,13 @@ namespace ImmersX
               {
                 const auto input_cell = source_cell_->as_dof_handler_iterator(
                   *it->second->dof_handler);
-                it->second->values->reinit(input_cell);
-                ++it;
+                if (&it->second->values->get_fe() == &input_cell->get_fe())
+                  {
+                    it->second->values->reinit(input_cell);
+                    ++it;
+                  }
+                else
+                  it = entries_.erase(it);
               }
             else
               it = entries_.erase(it);
@@ -2662,7 +2669,7 @@ namespace ImmersX
             }
           entry->values = std::make_unique<dealii::FEValues<dim, spacedim>>(
             input_field.mapping(),
-            input_field.space().finite_element(),
+            input_cell->get_fe(),
             entry->reusable ? source_values_->get_quadrature() : *quadrature,
             dealii::update_values | update_flags_);
           entry->values->reinit(input_cell);
@@ -2752,8 +2759,7 @@ namespace ImmersX
           return Value{};
         const auto &input_field = observable.source();
         const auto &entry       = input_cache.get(observable);
-        AssertIndexRange(
-          basis, input_field.space().finite_element().n_dofs_per_cell());
+        AssertIndexRange(basis, entry.values->dofs_per_cell);
         const auto &view = (*entry.values)[input_field.extractor()];
         return observable.operation()(view, basis, q);
       }
@@ -2900,12 +2906,20 @@ namespace ImmersX
         const auto                flags = dealii::update_JxW_values |
                            dealii::update_quadrature_points |
                            observable.update_flags() | target.update_flags();
-        dealii::FEValues<dim, spacedim> source_values(
-          source.mapping(), source.space().finite_element(), quadrature, flags);
-        dealii::FEValues<dim, spacedim> target_values(
-          target_field.mapping(),
-          target_field.space().finite_element(),
-          quadrature,
+        const dealii::hp::MappingCollection<dim, spacedim> source_mappings(
+          source.mapping());
+        const dealii::hp::MappingCollection<dim, spacedim> target_mappings(
+          target_field.mapping());
+        const dealii::hp::QCollection<dim>  quadratures(quadrature);
+        dealii::hp::FEValues<dim, spacedim> source_hp_values(
+          source_mappings,
+          source.dof_handler().get_fe_collection(),
+          quadratures,
+          flags);
+        dealii::hp::FEValues<dim, spacedim> target_hp_values(
+          target_mappings,
+          target_field.dof_handler().get_fe_collection(),
+          quadratures,
           flags);
 
         auto result = std::make_shared<VectorType>();
@@ -2913,12 +2927,11 @@ namespace ImmersX
         *result = 0.;
         std::vector<dealii::types::global_dof_index> target_indices(
           target_field.space().finite_element().n_dofs_per_cell());
-        CellInputCache input_cache(context,
-                                   source.dof_handler().begin_active(),
-                                   source_values,
-                                   source.mapping(),
-                                   observable.update_flags(),
-                                   true);
+        using Cache = CellInputCache<
+          Context,
+          typename dealii::DoFHandler<dim, spacedim>::active_cell_iterator,
+          dealii::FEValues<dim, spacedim>>;
+        std::unique_ptr<Cache> input_cache;
         for (const auto &source_cell :
              source.dof_handler().active_cell_iterators())
           if (source_cell->is_locally_owned())
@@ -2929,15 +2942,28 @@ namespace ImmersX
                 target_field.dof_handler());
               if (!target_cell->is_locally_owned())
                 continue;
-              source_values.reinit(source_cell);
-              target_values.reinit(target_cell);
-              input_cache.reinit(source_cell, source_values);
+              source_hp_values.reinit(source_cell);
+              target_hp_values.reinit(target_cell);
+              const auto &source_values =
+                source_hp_values.get_present_fe_values();
+              const auto &target_values =
+                target_hp_values.get_present_fe_values();
+              if (input_cache)
+                input_cache->reinit(source_cell, source_values);
+              else
+                input_cache = std::make_unique<Cache>(context,
+                                                      source_cell,
+                                                      source_values,
+                                                      source.mapping(),
+                                                      observable.update_flags(),
+                                                      true);
+              target_indices.resize(target_cell->get_fe().n_dofs_per_cell());
               target_cell->get_dof_indices(target_indices);
               const auto &target_view = target_values[target_field.extractor()];
               for (unsigned int q = 0; q < quadrature.size(); ++q)
                 {
                   const auto value = value_at<VectorType>(
-                    observable, source_values, input_cache, q, context.time());
+                    observable, source_values, *input_cache, q, context.time());
                   for (unsigned int i = 0; i < target_indices.size(); ++i)
                     if (target_field.has_execution_index(target_indices[i]))
                       (*result)(
@@ -3164,7 +3190,9 @@ namespace ImmersX
                 continue;
               const auto column_cell = source_cell->as_dof_handler_iterator(
                 column_source.dof_handler());
+              target_indices.resize(target_cell->get_fe().n_dofs_per_cell());
               target_cell->get_dof_indices(target_indices);
+              column_indices.resize(column_cell->get_fe().n_dofs_per_cell());
               column_cell->get_dof_indices(column_indices);
               std::vector<dealii::types::global_dof_index>
                 target_execution_indices;
@@ -3204,19 +3232,26 @@ namespace ImmersX
                                  sparsity,
                                  target_field.space().mpi_communicator());
 
-        dealii::FEValues<dim, spacedim> source_values(
-          source.mapping(), source.space().finite_element(), quadrature, flags);
-        dealii::FEValues<dim, spacedim> target_values(
-          target_field.mapping(),
-          target_field.space().finite_element(),
-          quadrature,
+        const dealii::hp::MappingCollection<dim, spacedim> source_mappings(
+          source.mapping());
+        const dealii::hp::MappingCollection<dim, spacedim> target_mappings(
+          target_field.mapping());
+        const dealii::hp::QCollection<dim>  quadratures(quadrature);
+        dealii::hp::FEValues<dim, spacedim> source_hp_values(
+          source_mappings,
+          source.dof_handler().get_fe_collection(),
+          quadratures,
           flags);
-        CellInputCache input_cache(context,
-                                   source.dof_handler().begin_active(),
-                                   source_values,
-                                   source.mapping(),
-                                   observable.update_flags(),
-                                   true);
+        dealii::hp::FEValues<dim, spacedim> target_hp_values(
+          target_mappings,
+          target_field.dof_handler().get_fe_collection(),
+          quadratures,
+          flags);
+        using Cache = CellInputCache<
+          Context,
+          typename dealii::DoFHandler<dim, spacedim>::active_cell_iterator,
+          dealii::FEValues<dim, spacedim>>;
+        std::unique_ptr<Cache> input_cache;
         for (const auto &source_cell :
              source.dof_handler().active_cell_iterators())
           if (source_cell->is_locally_owned())
@@ -3229,10 +3264,24 @@ namespace ImmersX
                 continue;
               const auto column_cell = source_cell->as_dof_handler_iterator(
                 column_source.dof_handler());
-              source_values.reinit(source_cell);
-              target_values.reinit(target_cell);
-              input_cache.reinit(source_cell, source_values);
+              source_hp_values.reinit(source_cell);
+              target_hp_values.reinit(target_cell);
+              const auto &source_values =
+                source_hp_values.get_present_fe_values();
+              const auto &target_values =
+                target_hp_values.get_present_fe_values();
+              if (input_cache)
+                input_cache->reinit(source_cell, source_values);
+              else
+                input_cache = std::make_unique<Cache>(context,
+                                                      source_cell,
+                                                      source_values,
+                                                      source.mapping(),
+                                                      observable.update_flags(),
+                                                      true);
+              target_indices.resize(target_cell->get_fe().n_dofs_per_cell());
               target_cell->get_dof_indices(target_indices);
+              column_indices.resize(column_cell->get_fe().n_dofs_per_cell());
               column_cell->get_dof_indices(column_indices);
               const auto &target_view = target_values[target_field.extractor()];
               std::vector<unsigned int> target_positions;
@@ -3264,7 +3313,7 @@ namespace ImmersX
                       derivative_at<VectorType>(observable,
                                                 field,
                                                 source_values,
-                                                input_cache,
+                                                *input_cache,
                                                 q,
                                                 column_positions[j],
                                                 context.time());
@@ -3408,7 +3457,7 @@ namespace ImmersX
         dealii::FEValues<TargetField::dimension(),
                          TargetField::spacedimension()>
           values(target_field.mapping(),
-                 target_field.space().finite_element(),
+                 cell->get_fe(),
                  quadrature,
                  target.update_flags());
         values.reinit(cell);
@@ -3501,10 +3550,12 @@ namespace ImmersX
              target_field.dof_handler().active_cell_iterators())
           if (cell->is_locally_owned())
             {
+              target_indices.resize(cell->get_fe().n_dofs_per_cell());
               cell->get_dof_indices(target_indices);
-              const auto source_cell =
-                cell->as_dof_handler_iterator(source.dof_handler());
-              source_cell->get_dof_indices(column_indices);
+              const auto column_cell =
+                cell->as_dof_handler_iterator(column_source.dof_handler());
+              column_indices.resize(column_cell->get_fe().n_dofs_per_cell());
+              column_cell->get_dof_indices(column_indices);
               std::vector<dealii::types::global_dof_index> rows;
               rows.reserve(target_indices.size());
               for (const auto index : target_indices)
@@ -3514,12 +3565,13 @@ namespace ImmersX
                                dealii::types::global_dof_index>::max())
                     rows.push_back(row);
                 }
+              std::vector<dealii::types::global_dof_index> columns;
+              columns.reserve(column_indices.size());
+              for (const auto index : column_indices)
+                if (column_source.has_execution_index(index))
+                  columns.push_back(column_source.execution_index(index));
               target_field.constraints().add_entries_local_to_global(
-                rows,
-                column_source.constraints(),
-                column_indices,
-                sparsity,
-                true);
+                rows, column_source.constraints(), columns, sparsity, true);
             }
 
         if (dynamic_cast<const dealii::parallel::TriangulationBase<
@@ -3545,10 +3597,12 @@ namespace ImmersX
              target_field.dof_handler().active_cell_iterators())
           if (cell->is_locally_owned())
             {
+              target_indices.resize(cell->get_fe().n_dofs_per_cell());
               cell->get_dof_indices(target_indices);
-              const auto source_cell =
-                cell->as_dof_handler_iterator(source.dof_handler());
-              source_cell->get_dof_indices(column_indices);
+              const auto column_cell =
+                cell->as_dof_handler_iterator(column_source.dof_handler());
+              column_indices.resize(column_cell->get_fe().n_dofs_per_cell());
+              column_cell->get_dof_indices(column_indices);
               std::vector<unsigned int>                    active_rows;
               std::vector<dealii::types::global_dof_index> rows;
               for (unsigned int i = 0; i < target_indices.size(); ++i)
@@ -3559,27 +3613,36 @@ namespace ImmersX
                     rows.push_back(
                       target_field.execution_index(target_indices[i]));
                   }
+              std::vector<unsigned int>                    active_columns;
+              std::vector<dealii::types::global_dof_index> columns;
+              for (unsigned int j = 0; j < column_indices.size(); ++j)
+                if (column_source.has_execution_index(column_indices[j]))
+                  {
+                    active_columns.push_back(j);
+                    columns.push_back(
+                      column_source.execution_index(column_indices[j]));
+                  }
               dealii::FullMatrix<double> local(active_rows.size(),
-                                               column_indices.size());
+                                               active_columns.size());
               for (std::size_t q = 0; q < points.size(); ++q)
                 if (points[q].source_entity_id ==
                     cell->global_active_cell_index())
                   {
                     const auto basis = target_basis(target, cell, points[q]);
                     for (unsigned int row = 0; row < active_rows.size(); ++row)
-                      for (unsigned int j = 0; j < column_indices.size(); ++j)
+                      for (unsigned int j = 0; j < active_columns.size(); ++j)
                         local(row, j) +=
                           target.scale() *
-                          radial_value(
-                            observable.linearize_point(context, field, q, j),
-                            points[q]) *
+                          radial_value(observable.linearize_point(
+                                         context, field, q, active_columns[j]),
+                                       points[q]) *
                           basis[active_rows[row]] * points[q].weight;
                   }
               target_field.constraints().distribute_local_to_global(
                 local,
                 rows,
                 column_source.constraints(),
-                column_indices,
+                columns,
                 *result.matrix);
             }
         compress_weak_matrix(*result.matrix);
