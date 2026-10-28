@@ -1,6 +1,9 @@
 set(_command "${TEST_EXECUTABLE}" "${PARAMETER_FILE}")
 if(DEFINED MPIEXEC AND NOT MPIEXEC STREQUAL "")
-  list(PREPEND _command "${MPIEXEC}" -np 2)
+  if(NOT DEFINED MPI_RANKS)
+    set(MPI_RANKS 2)
+  endif()
+  list(PREPEND _command "${MPIEXEC}" -np "${MPI_RANKS}")
 endif()
 execute_process(COMMAND ${_command}
                 RESULT_VARIABLE _result

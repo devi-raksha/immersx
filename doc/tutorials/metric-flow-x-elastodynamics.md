@@ -34,6 +34,43 @@ nonzero-inflow coupled example in serial and on two MPI ranks, using degree
 two to check automatic multiplier selection. Coupled cases write to separate
 build-tree output directories.
 
+The coupled application can assign vessel cells to the owners of the solid
+cells containing their centers:
+
+```text
+subsection MetricFlowX coupling
+  set Embedded partitioning policy = immersed
+end
+```
+
+The default value, `default`, retains ordinary Domain partitioning. With
+`immersed`, the solid mesh is built first and supplies the ownership policy
+when the flow Domain is finalized. The multiplier and imported vessel data
+are then initialized on that final mesh. This policy improves proximity to
+the solid; its load balance follows the solid partition and vessel locations.
+It can leave ranks without vessels and does not guarantee connected vessel
+subdomains. Vessel cell centers must lie inside the solid mesh.
+
+With
+[MetricFlowX PR #82](https://github.com/luca-heltai/metric-flow-x/pull/82),
+both policies keep each RCR capacitor pressure on the rank owning its
+terminal cell. MetricFlowX represents that pressure as component 4 of its
+hp finite element: `FE_DGQ(0)` on capacitive terminal cells and `FE_Nothing`
+elsewhere. Area, velocity, traces and capacitor pressures share the native
+`DoFHandler` numbering; the adapter uses that numbering directly and retains
+MetricFlowX's relevant indices for distant terminal links. There is no
+separate FE-to-state conversion. Observable evaluation and weak-term
+linearization select each cell's active element and local DoF count.
+Imported reference areas and multiplier fields keep their own FE spaces.
+
+Use a MetricFlowX version containing PR #82's hp representation. The earlier
+rank-local layout with manually appended capacitor indices is no longer
+supported by this adapter.
+
+MetricFlowX and ImmersX must also use the same linear algebra backend. When
+deal.II provides Trilinos, configure MetricFlowX with
+`-DMETRIC_FLOW_X_BACKEND=Trilinos` for this application.
+
 The inflow starts with $Q(0)=Q'(0)=0$, matching the initially resting solid
 and zero initial acceleration. Displacement compatibility also imposes
 conditions on the initial velocity and acceleration; a nonzero initial

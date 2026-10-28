@@ -11,6 +11,7 @@ skeleton in `.github/CHANGELOG_TEMPLATE.md`.
 
 ### Added
 
+- [PR #292](https://github.com/luca-heltai/immersx/pull/292) Allow the coupled MetricFlowX–elastodynamics application to partition vessels with the solid cell owners through the `immersed` policy, with serial and MPI RCR regression cases.
 - [PR #291](https://github.com/luca-heltai/immersx/pull/291) Allow ElastodynamicsSolver to run on simplex (triangle and tetrahedron) meshes with `FE_SimplexP`, simplex Gauss quadrature, and a linear `MappingFE`. Simplex meshes require the fullydistributed Domain triangulation. `run()` skips the error table on simplex meshes, and `compute_error()` throws there.
 - [PR #291](https://github.com/luca-heltai/immersx/pull/291) Report the solid boundary ids and the number of vessel cells with a vertex outside the solid mesh at the start of `metric_flow_x_elastodynamics`.
 - [PR #290](https://github.com/luca-heltai/immersx/pull/290) Select harmonic reinforcement dimensions and displacement formulation from parameters: reduced meshes use a normal volume lift, full-dimensional meshes need no lift, and either independent displacements with continuity multipliers or one shared displacement can be solved.
@@ -155,6 +156,9 @@ skeleton in `.github/CHANGELOG_TEMPLATE.md`.
 
 ### Fixed
 
+- [PR #294](https://github.com/luca-heltai/immersx/pull/294) Avoid division by zero in small fiber multiplier Schur solves with deal.II 9.7, including configurable discontinuous multiplier spaces in serial and MPI.
+- [PR #292](https://github.com/luca-heltai/immersx/pull/292) Evaluate lifted observables and nonlinear weak terms with each cell's active finite element and local DoF count, including hp terminal pressure fields. Preserve differentiated fields' execution numbering for compact and permuted layouts and check coupled Jacobians per residual block.
+- [PR #292](https://github.com/luca-heltai/immersx/pull/292) Use MetricFlowX's native hp DoFHandler numbering and ghost indices for coupled area and velocity fields, including RCR capacitor pressures represented as a fifth FE component. Remove the conversion for the previous manually numbered capacitor layout.
 - [PR #290](https://github.com/luca-heltai/immersx/pull/290) Preserve saved Coral graphs by keeping known-source factory and execution-node keys unchanged when KnownTerm has a default integration support.
 - [PR #290](https://github.com/luca-heltai/immersx/pull/290) Apply harmonic 1D Dirichlet amplitudes only on physical boundary cells with deal.II 9.7, preserving nonzero complex boundary data across MPI partitions.
 - [PR #290](https://github.com/luca-heltai/immersx/pull/290) Retain essential source offsets in unreindexed nonmatching weak terms, including harmonic continuity between independently meshed full-dimensional materials.
