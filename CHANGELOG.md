@@ -154,6 +154,7 @@ skeleton in `.github/CHANGELOG_TEMPLATE.md`.
 
 ### Fixed
 
+- [PR #294](https://github.com/luca-heltai/immersx/pull/294) Avoid division by zero in small fiber multiplier Schur solves with deal.II 9.7, including configurable discontinuous multiplier spaces in serial and MPI.
 - [PR #292](https://github.com/luca-heltai/immersx/pull/292) Assemble lifted nonlinear Jacobians in each differentiated field's execution numbering, so MPI coupling derivatives act on vascular area rather than rank-local RCR capacitor pressures. Cover compact and permuted field layouts and check coupled Jacobians per residual block.
 - [PR #292](https://github.com/luca-heltai/immersx/pull/292) Map MetricFlowX area and velocity FE indices into the complete flow state when RCR capacitor pressures are numbered locally on each rank. Preserve compatibility with older identity-numbered packages.
 - [PR #290](https://github.com/luca-heltai/immersx/pull/290) Preserve saved Coral graphs by keeping known-source factory and execution-node keys unchanged when KnownTerm has a default integration support.
